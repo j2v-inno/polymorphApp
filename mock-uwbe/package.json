@@ -1,0 +1,13 @@
+{
+  "name": "mock-uwbe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Fake uw-be for local testing only — canned Style A/B responses, no DB/Redis/S3 required. Not part of the Fluid App itself.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "transapp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fluid App: single-spa Parcel + thin orchestration backend for the acquisition -> qualification -> batch -> download pipeline in Orion (uw-be)",
+  "scripts": {
+    "dev:mock-uwbe": "pnpm --filter mock-uwbe start",
+    "dev:backend": "pnpm --filter transapp-backend dev",
+    "dev:frontend": "pnpm --filter transapp-frontend dev",
+    "build": "pnpm --filter transapp-backend build && pnpm --filter transapp-frontend build",
+    "typecheck": "pnpm --filter transapp-backend typecheck && pnpm --filter transapp-frontend typecheck"
+  },
+  "packageManager": "pnpm@10.12.1",
+  "engines": {
+    "node": ">=20"
+  }
+}

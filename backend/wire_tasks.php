@@ -1,0 +1,15 @@
+$config = ['web_app' => ['url' => 'http://localhost:9100/', 'token' => null, 'time_based_token' => false, 'task_complete_by_api' => false, 'send_iatoken' => false]];
+$acq = \App\Model\Task::where('project_id', 2)->where('code', 'ACQUISITION')->first();
+$acq->external_app_integration = $config;
+$acq->new_file_register_task = 1;
+$acq->save();
+$qual = \App\Model\Task::where('project_id', 2)->where('code', 'QUALIFICATION')->first();
+$qual->external_app_integration = $config;
+$qual->save();
+$split = \App\Model\Task::where('project_id', 2)->where('code', 'BATCH_SPLIT')->first();
+$split->external_app_integration = $config;
+$split->save();
+$dl = \App\Model\Task::where('project_id', 2)->where('code', 'DOWNLOAD')->first();
+$dl->external_app_integration = $config;
+$dl->save();
+echo "done\n";

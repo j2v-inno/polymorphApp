@@ -1,0 +1,690 @@
+/* transapp — shared design system. Loaded once via single-spa-entry.tsx so it
+   applies in both standalone and Parcel mount modes. */
+
+:root {
+  --fl-bg: #f3f4f9;
+  --fl-surface: #ffffff;
+  --fl-border: #e3e5f0;
+  --fl-text: #1c2033;
+  --fl-text-muted: #676c85;
+  --fl-text-faint: #9498ac;
+
+  --fl-primary: #4f46e5;
+  --fl-primary-dark: #4338ca;
+  --fl-primary-soft: #eef0fe;
+
+  --fl-success: #15803d;
+  --fl-success-soft: #ecfdf3;
+  --fl-success-border: #b7ebc6;
+
+  --fl-warning: #b45309;
+  --fl-warning-soft: #fffbeb;
+  --fl-warning-border: #fde3a7;
+
+  --fl-error: #b91c1c;
+  --fl-error-soft: #fef2f2;
+  --fl-error-border: #f7c6c6;
+
+  --fl-radius-sm: 6px;
+  --fl-radius-md: 10px;
+  --fl-radius-lg: 18px;
+
+  --fl-shadow-sm: 0 1px 2px rgba(23, 26, 45, 0.06);
+  --fl-shadow-md: 0 12px 32px -12px rgba(30, 34, 66, 0.22);
+
+  --fl-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+#app,
+.fluid-app {
+  font-family: var(--fl-font);
+  color: var(--fl-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.fluid-app * {
+  box-sizing: border-box;
+}
+
+/* ---------------------------------------------------------------- shell */
+
+.fluid-app {
+  min-height: 100vh;
+  background: radial-gradient(1200px 480px at 50% -120px, #eef0fe 0%, var(--fl-bg) 55%);
+  display: flex;
+  flex-direction: column;
+}
+
+.fluid-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 32px;
+  background: linear-gradient(135deg, #1c1f3b 0%, #2c2a66 55%, #3c2f8a 100%);
+  color: #fff;
+}
+
+.fluid-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fluid-brand__mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--fl-radius-sm);
+  background: linear-gradient(135deg, #818cf8, #c084fc);
+  font-weight: 700;
+  font-size: 1rem;
+  color: #1c1f3b;
+}
+
+.fluid-brand__name {
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.fluid-brand__tag {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.2;
+}
+
+.fluid-context {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.75);
+  text-align: right;
+  line-height: 1.4;
+}
+
+.fluid-context strong {
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- stepper */
+
+.fluid-stepper {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  padding: 22px 24px 20px;
+  background: var(--fl-surface);
+  border-bottom: 1px solid var(--fl-border);
+}
+
+.fluid-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fluid-step__circle {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border: 2px solid var(--fl-border);
+  color: var(--fl-text-faint);
+  background: var(--fl-surface);
+  transition: all 0.15s ease;
+}
+
+.fluid-step__label {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--fl-text-faint);
+  white-space: nowrap;
+}
+
+.fluid-step--done .fluid-step__circle {
+  background: var(--fl-primary);
+  border-color: var(--fl-primary);
+  color: #fff;
+}
+
+.fluid-step--done .fluid-step__label {
+  color: var(--fl-text-muted);
+}
+
+.fluid-step--active .fluid-step__circle {
+  background: var(--fl-primary-soft);
+  border-color: var(--fl-primary);
+  color: var(--fl-primary);
+}
+
+.fluid-step--active .fluid-step__label {
+  color: var(--fl-text);
+}
+
+.fluid-step__connector {
+  width: 48px;
+  height: 2px;
+  margin: 0 10px;
+  background: var(--fl-border);
+  align-self: center;
+}
+
+.fluid-step--done + .fluid-step__connector,
+.fluid-step-connector--done {
+  background: var(--fl-primary);
+}
+
+/* ---------------------------------------------------------------- main */
+
+.fluid-main {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: 40px 20px 60px;
+}
+
+.fluid-card {
+  width: 100%;
+  max-width: 720px;
+  background: var(--fl-surface);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-lg);
+  box-shadow: var(--fl-shadow-md);
+  padding: 32px 36px;
+  height: fit-content;
+}
+
+.fluid-screen h1 {
+  margin: 0 0 6px;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.fluid-screen > p:first-of-type {
+  margin: 0 0 26px;
+  color: var(--fl-text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------- fields */
+
+.fluid-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fl-text-muted);
+}
+
+.fluid-field input[type="text"],
+.fluid-field input:not([type]),
+.fluid-field input[type="number"] {
+  font: inherit;
+  font-weight: 400;
+  color: var(--fl-text);
+  padding: 10px 12px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fluid-field input:focus {
+  outline: none;
+  border-color: var(--fl-primary);
+  box-shadow: 0 0 0 3px var(--fl-primary-soft);
+}
+
+.fluid-inline-field {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.fluid-inline-field input {
+  flex: 1;
+  font: inherit;
+  padding: 10px 12px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-md);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fluid-inline-field input:focus {
+  outline: none;
+  border-color: var(--fl-primary);
+  box-shadow: 0 0 0 3px var(--fl-primary-soft);
+}
+
+/* ---------------------------------------------------------------- dropzone */
+
+.fluid-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px 20px;
+  border: 1.5px dashed var(--fl-border);
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-bg);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.fluid-dropzone:hover {
+  border-color: var(--fl-primary);
+  background: var(--fl-primary-soft);
+}
+
+.fluid-dropzone input[type="file"] {
+  display: none;
+}
+
+.fluid-dropzone__icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: var(--fl-primary-soft);
+  color: var(--fl-primary);
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.fluid-dropzone__title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--fl-text);
+}
+
+.fluid-dropzone__hint {
+  font-size: 0.78rem;
+  color: var(--fl-text-faint);
+}
+
+.fluid-dropzone__file {
+  font-size: 0.82rem;
+  color: var(--fl-primary);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+.fluid-btn {
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.88rem;
+  padding: 10px 20px;
+  border-radius: var(--fl-radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fluid-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.fluid-btn--primary {
+  background: var(--fl-primary);
+  color: #fff;
+}
+
+.fluid-btn--primary:not(:disabled):hover {
+  background: var(--fl-primary-dark);
+}
+
+.fluid-btn--secondary {
+  background: var(--fl-surface);
+  color: var(--fl-text);
+  border-color: var(--fl-border);
+}
+
+.fluid-btn--secondary:not(:disabled):hover {
+  background: var(--fl-bg);
+  border-color: var(--fl-text-faint);
+}
+
+.fluid-btn--ghost {
+  background: transparent;
+  color: var(--fl-text-muted);
+  border-color: var(--fl-border);
+}
+
+.fluid-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--fl-border);
+}
+
+.fluid-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+/* ---------------------------------------------------------------- alerts */
+
+.fluid-alert {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--fl-radius-md);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin: 14px 0 0;
+  border: 1px solid transparent;
+}
+
+.fluid-alert::before {
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.fluid-error,
+.fluid-alert--error {
+  background: var(--fl-error-soft);
+  border-color: var(--fl-error-border);
+  color: var(--fl-error);
+}
+
+.fluid-error::before,
+.fluid-alert--error::before {
+  content: "!";
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border-radius: 999px;
+  background: var(--fl-error);
+  color: #fff;
+  font-size: 0.72rem;
+}
+
+.fluid-warning,
+.fluid-alert--warning {
+  background: var(--fl-warning-soft);
+  border-color: var(--fl-warning-border);
+  color: var(--fl-warning);
+}
+
+.fluid-warning::before,
+.fluid-alert--warning::before {
+  content: "~";
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border-radius: 999px;
+  background: var(--fl-warning);
+  color: #fff;
+  font-size: 0.72rem;
+}
+
+.fluid-success,
+.fluid-alert--success {
+  background: var(--fl-success-soft);
+  border-color: var(--fl-success-border);
+  color: var(--fl-success);
+}
+
+.fluid-success::before,
+.fluid-alert--success::before {
+  content: "\2713";
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border-radius: 999px;
+  background: var(--fl-success);
+  color: #fff;
+  font-size: 0.72rem;
+}
+
+/* p elements using the legacy bare classNames (no .fluid-alert wrapper) still
+   need the box treatment for existing markup that only sets one className. */
+p.fluid-error,
+p.fluid-warning {
+  margin: 14px 0 0;
+}
+
+/* ---------------------------------------------------------------- result card */
+
+.fluid-result {
+  margin-top: 20px;
+  padding: 16px 18px;
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-bg);
+  border: 1px solid var(--fl-border);
+}
+
+.fluid-result p {
+  margin: 0 0 8px;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.fluid-result p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------------------------------------------------------------- badges */
+
+.fluid-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.fluid-badge--download-ready {
+  background: var(--fl-success-soft);
+  color: var(--fl-success);
+}
+
+.fluid-badge--manual-fix {
+  background: var(--fl-warning-soft);
+  color: var(--fl-warning);
+}
+
+/* ---------------------------------------------------------------- table */
+
+.fluid-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+  font-size: 0.86rem;
+}
+
+.fluid-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--fl-text-faint);
+  font-weight: 700;
+  padding: 0 12px 10px;
+  border-bottom: 1px solid var(--fl-border);
+}
+
+.fluid-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--fl-border);
+  color: var(--fl-text);
+}
+
+.fluid-table tr:last-child td {
+  border-bottom: none;
+}
+
+.fluid-table tbody tr:hover {
+  background: var(--fl-bg);
+}
+
+/* ---------------------------------------------------------------- page nav */
+
+.fluid-page-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-bg);
+  border: 1px solid var(--fl-border);
+  margin-bottom: 16px;
+}
+
+.fluid-page-nav span {
+  font-weight: 600;
+  font-size: 0.88rem;
+  min-width: 130px;
+}
+
+.fluid-page-nav label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.84rem;
+  color: var(--fl-text-muted);
+  margin-left: auto;
+}
+
+.fluid-flag-summary {
+  font-size: 0.84rem;
+  color: var(--fl-text-muted);
+  margin: 0 0 4px;
+}
+
+/* ---------------------------------------------------------------- lists */
+
+.fluid-link-list {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fluid-link-list li {
+  padding: 12px 14px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-bg);
+}
+
+.fluid-link-list a {
+  color: var(--fl-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fluid-link-list a:hover {
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------- loading / error (whole-app) */
+
+.fluid-app-loading,
+.fluid-app-error {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-family: var(--fl-font);
+  background: var(--fl-bg);
+  color: var(--fl-text-muted);
+  font-size: 0.95rem;
+}
+
+.fluid-app-error {
+  color: var(--fl-error);
+}
+
+.fluid-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fl-text-muted);
+  font-size: 0.92rem;
+  padding: 20px 0;
+}
+
+.fluid-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2.5px solid var(--fl-primary-soft);
+  border-top-color: var(--fl-primary);
+  animation: fluid-spin 0.7s linear infinite;
+  flex: none;
+}
+
+@keyframes fluid-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fluid-done {
+  text-align: center;
+  padding: 30px 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--fl-success);
+}
+
+@media (max-width: 640px) {
+  .fluid-topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .fluid-context {
+    text-align: left;
+  }
+
+  .fluid-stepper {
+    overflow-x: auto;
+    justify-content: flex-start;
+    padding: 16px;
+  }
+
+  .fluid-card {
+    padding: 24px 20px;
+  }
+}
