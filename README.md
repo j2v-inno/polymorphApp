@@ -63,12 +63,17 @@ curl -X POST http://localhost:4100/api/batch/split -H "Content-Type: application
 curl "http://localhost:4100/api/download?projectCode=TEST-UNIFIED-WF&workflowCode=WF001&taskId=3761&jobName=UF0001&batchName=UF0001013&fileIds=<childFileId1>,<childFileId2>"
 ```
 
-Notes on the mock: `mock-uwbe/server.js` implements canned versions of all 7 uw-be
-endpoints this app calls, stores uploaded/registered file bytes in memory, and
-serves them back for the batch-split and download steps — so a real multi-page PDF
-genuinely gets split and the resulting files are genuinely downloadable. It does
-*not* validate the `api-token` header or enforce `project_code` tenancy — it exists
-to exercise the wiring, not to model uw-be's actual behavior/bugs (§7). Edit
+Notes on the mock: `mock-uwbe/server.js` implements canned versions of the uw-be
+endpoints this app calls (including `get-task-next-file-with-start`, added later —
+not in the original 7-endpoint set §5 lists), stores uploaded/registered file bytes
+in memory, and serves them back for the batch-split and download steps — so a real
+multi-page PDF genuinely gets split and the resulting files are genuinely
+downloadable. `update-file-meta-data` edits are also persisted in-memory per file ID
+(`metaDataByFileId` in `server.js`) and echoed back by
+`get-task-ongoing-file`/`get-task-next-file-with-start`, so the qualification
+screen's metadata editor round-trips visibly during a demo. It does *not* validate
+the `api-token` header or enforce `project_code` tenancy — it exists to exercise the
+wiring, not to model uw-be's actual behavior/bugs (§7). Edit
 `get-task-ongoing-file`'s `meta_data.pages_with_errors` in `server.js` to test the
 manual-fix routing path in step 3.
 
@@ -248,12 +253,66 @@ guessing silently:
 | `/acquisition` register → upload → gate → complete (§6.1) | Implemented. Gate outcome (reject vs. flag) is config-driven (`ACQUISITION_GATE_MODE`) pending **blocker #1** (owner: Bhanu) |
 | `/qualification` view-tracking + 3-way routing (§6.2) | Clean/rework implemented. Archive returns `501` pending **blocker #2** (owner: Rifky) |
 | `/batch` split + dynamic task-graph routing (§6.3/§6.3.1) | Implemented, including the intentional DAG-routing deviation flagged to Vibhor. `get-all-tasks` verified Style A. Blocked end-to-end on the `input_download_url` gap noted above (uw-be workflow-engine data, not a transapp bug) |
+| `/batch` by-chapter split method (`splitMethod: "by-chapter"`) | Implemented — see "Batching by chapter" below. Not in the original dev-context doc at all; added for a use case (a single large multi-chapter PDF that needs one output file per chapter, each individually qualified) that §6.3's fixed 2–5-equal-chunks model doesn't cover |
+| Qualification PDF preview + custom metadata editor | Implemented — native browser `<iframe>` preview (`input_download_url#page=N`) and a free-form key/value editor over `update-file-meta-data`, both additions beyond §6.2's original scope |
 | `/download` link resolution (§6.4) | Implemented for a known set of file IDs. How this screen discovers *all* sibling split-file IDs from one launch context isn't specified in §6 — see the TODO in `frontend/src/modes/download/DownloadScreen.tsx` |
 | Parcel-mode auth (§10) | Backend checks token *presence* (`x-fluid-parcel-token`), not validity — the validation mechanism isn't specified upstream |
 | Standalone-mode auth (§13 #6) | Not implemented — backend returns `501` unless `ALLOW_UNAUTHENTICATED_STANDALONE=true` (local dev only) |
 
 Do not silently resolve any of the above without checking with the doc's named owner
 first — that's the whole point of flagging them inline instead of guessing.
+
+## Batching by chapter
+
+For a single large PDF that's really N chapters bound together (the motivating case:
+a ~13MB "complete series" PDF that needs to come out the other end as one
+downloadable file per chapter), the Batch split screen offers a second split method
+alongside the original equal-pages one:
+
+- **equal-pages** (default) — unchanged §6.3 behavior: 2–5 roughly-equal-page-count
+  children, routed to manual-fix/download-ready by whether they touch
+  `pages_with_errors` from a *prior* qualification pass on the whole document.
+- **by-chapter** — detects chapter-start pages using, in order:
+  1. **The PDF's own outline/bookmarks** (the navigation panel most PDF viewers
+     show) — filtered by title against `BATCH_SPLIT_CHAPTER_HEADING_PATTERN`, with
+     each match's destination resolved to a real page number. Most reliable when
+     present: verified against a real 2103-page, 5-book "complete series" PDF
+     whose actual chapter-opener titles (`"I Jason"`, `"Ii Piper"`, etc. — not
+     literal "Chapter N") are rendered as a **graphic**, not text, on the
+     chapter's own page — so no text-based approach could ever find them there —
+     but the outline carries the same titles as real, resolvable text.
+  2. **Page-text scan** (the original approach) — if a PDF has no outline at
+     all, falls back to testing each page's first non-blank line against the
+     same pattern. Only catches headings that are themselves extractable text on
+     the page, which excludes any book using styled/graphical chapter openers.
+  3. **Equal-pages** — if neither finds anything, falls back silently (surfaced
+     as `usedFallback`/`detectionMethod` in the response) rather than erroring
+     out on a pattern or outline mismatch.
+
+  Produces one child file per detected chapter, named from the heading text.
+
+The two methods also differ in *routing*, not just page math: by-chapter has no
+`pages_with_errors` to route by (qualification hasn't run on these chapters yet —
+that's the point, it runs *after* this split, per chapter), so every by-chapter
+child routes to `BATCH_SPLIT_QUALIFICATION_TASK_CODE` instead. This makes the actual
+pipeline order for this use case **register → batch (by-chapter) → qualify each
+chapter → download each chapter**, rather than §6.3's original
+**register → qualify whole doc → batch → download**. Qualification's own screen
+logic is unchanged either way — it just qualifies whatever file/task it's given,
+regardless of which path produced it.
+
+Outline reading (`pdf/split.ts`'s `detectChapterBoundariesFromOutline`) doesn't use
+pdf-lib (its outline support is low-level/undocumented) or a fresh `pdfjs-dist`
+dependency (pdf-parse v2's pdfjs-dist v5 crashes in this Node environment — see
+below) — it reaches into `pdf-parse`'s own vendored pdf.js build
+(`pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js`) directly via `createRequire`, since
+that specific build is already proven not to hit that crash. This is an internal,
+undocumented path that could break on a `pdf-parse` version bump; wrapped in
+try/catch so outline detection just becomes unavailable (falls back to text-scan)
+rather than crashing if it ever does. Expect to still need per-book
+`BATCH_SPLIT_CHAPTER_HEADING_PATTERN` tuning either way — there's no cross-book-format
+detection, just "match this regex against outline titles, or page text if there's no
+outline."
 
 ## Notable implementation choices not fully pinned by the dev-context doc
 

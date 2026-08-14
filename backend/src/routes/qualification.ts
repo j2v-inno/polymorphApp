@@ -73,6 +73,41 @@ qualificationRouter.post('/pages-viewed', async (req, res) => {
   res.json({ ok: true });
 });
 
+interface MetadataBody {
+  projectCode: string;
+  taskUid: string;
+  fileId: number;
+  jobId: number;
+  metaData: Record<string, unknown>;
+}
+
+/**
+ * Operator-editable metadata (title, notes, chapter labels, etc.) — same
+ * update-file-meta-data endpoint as pages-viewed above, just exposed for
+ * arbitrary caller-supplied keys instead of the hardcoded pages_viewed shape.
+ */
+qualificationRouter.post('/metadata', async (req, res) => {
+  const body = req.body as MetadataBody;
+
+  if (!body.projectCode || !body.taskUid || !body.fileId || !body.jobId || !body.metaData) {
+    res.status(400).json({ ok: false, error: 'projectCode, taskUid, fileId, jobId, and metaData are required' });
+    return;
+  }
+
+  const result = await updateFileMetaData({
+    projectCode: body.projectCode,
+    taskUid: body.taskUid,
+    fileId: body.fileId,
+    jobId: body.jobId,
+    metaData: body.metaData,
+  });
+  if (!result.ok) {
+    res.status(502).json({ ok: false, error: result.error });
+    return;
+  }
+  res.json({ ok: true });
+});
+
 interface CompleteBody {
   projectCode: string;
   taskUid: string;

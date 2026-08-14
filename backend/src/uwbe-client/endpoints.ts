@@ -102,8 +102,16 @@ export function updateFileStatus(params: UpdateFileStatusParams): Promise<UwbeRe
 export interface GetTaskOngoingFileParams {
   projectId: number;
   taskId: number;
-  fileId: number;
-  jobId: number;
+  /**
+   * Optional — omit to ask "what file does userId currently have active at
+   * this task" instead of looking up a known file (fixed uw-be-side to accept
+   * this; previously file_id/job_id were required unconditionally, which
+   * external-app launch URLs that don't carry a file_id had no way to
+   * satisfy). userId is required by uw-be when fileId is omitted.
+   */
+  fileId?: number;
+  jobId?: number;
+  userId?: number;
 }
 
 export interface TaskOngoingFile {
@@ -181,6 +189,7 @@ export async function getTaskOngoingFile(params: GetTaskOngoingFileParams): Prom
       task_id: params.taskId,
       file_id: params.fileId,
       job_id: params.jobId,
+      user_id: params.userId,
     },
   });
   if (!result.ok || !result.data) return { ...result, data: null };

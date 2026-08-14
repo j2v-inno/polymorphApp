@@ -30,6 +30,11 @@ const respond = (data, message = 'Operation completed successfully', code = 200)
 
 /** @type {Map<number, Buffer>} */
 const filesById = new Map();
+// Demo-only persistence so update-file-meta-data edits (custom qualification
+// fields, chapter_title from a by-chapter split, etc.) are actually visible on
+// the next fetch instead of silently vanishing — this mock has no real DB.
+/** @type {Map<number, Record<string, unknown>>} */
+const metaDataByFileId = new Map();
 let nextFileId = 1000;
 let nextTaskUidSuffix = 1;
 const taskUid = () => `mock-task-uid-${nextTaskUidSuffix++}`;
@@ -38,6 +43,7 @@ const taskUid = () => `mock-task-uid-${nextTaskUidSuffix++}`;
 
 app.post('/register-job-batch-file', (req, res) => {
   const fileId = nextFileId++;
+  metaDataByFileId.set(fileId, req.body.meta_data ?? {});
   res.json(
     respond({
       file_id: fileId,
@@ -79,6 +85,7 @@ app.post('/update-file-status', (_req, res) => {
 
 app.get('/get-task-ongoing-file', (req, res) => {
   const fileId = Number(req.query.file_id);
+  const metaData = { pages_with_errors: [], ...(metaDataByFileId.get(fileId) ?? {}) };
   res.json(
     respond({
       file: {
@@ -89,13 +96,45 @@ app.get('/get-task-ongoing-file', (req, res) => {
         // Best-effort field — not directly confirmed against a live response.
         task_uid: taskUid(),
         // Edit to a non-empty array to exercise §6.3.1's manual-fix routing.
-        meta_data: { pages_with_errors: [] },
+        meta_data: metaData,
       },
     }),
   );
 });
 
-app.post('/update-file-meta-data', (_req, res) => {
+// Not in the original endpoint set — added so the standalone/frontend
+// qualification screen (which claims via get-task-next-file-with-start, not
+// get-task-ongoing-file — see README's "real endpoint behavior" notes) has
+// something to hit against this mock. Field names deliberately differ from
+// get-task-ongoing-file's (input_download_url/s3_path, not download_url/
+// s3_file_path) to match the real endpoints' documented naming mismatch.
+app.post('/get-task-next-file-with-start', (req, res) => {
+  const fileId = Number(req.body.file_id);
+  const metaData = { pages_with_errors: [], ...(metaDataByFileId.get(fileId) ?? {}) };
+  res.json(
+    respond({
+      file: {
+        id: fileId,
+        file_name: `file-${fileId}.pdf`,
+        job_name: 'UF0001',
+        batch_name: 'UF0001013',
+        file_task_id: fileId,
+        job_id: req.body.job_id ?? 87789,
+        batch_id: req.body.batch_id ?? 557886,
+        project_id: 334,
+        task_id: 0,
+        input_download_url: `${BASE_URL}/mock-download/${fileId}`,
+        s3_path: `s3://mock-bucket/qualification/${fileId}.pdf`,
+        meta_data: metaData,
+      },
+    }),
+  );
+});
+
+app.post('/update-file-meta-data', (req, res) => {
+  const fileId = Number(req.body.file_id);
+  const existing = metaDataByFileId.get(fileId) ?? {};
+  metaDataByFileId.set(fileId, { ...existing, ...(req.body.meta_data ?? {}) });
   // Real response: data is always null on success (TaskProcessController.php:2592-2596).
   res.json(respond(null, 'Success.'));
 });
@@ -109,6 +148,7 @@ app.post('/flow-back-file-task', (_req, res) => {
 
 app.post('/register-file', (req, res) => {
   const fileId = nextFileId++;
+  metaDataByFileId.set(fileId, req.body.meta_data ?? {});
   // Real endpoint requires start_task=true for this block to populate at all,
   // and file_data (if used) must be a real multipart file capped at ~375KB raw —
   // too small for realistic split chunks. transapp always uses the
@@ -132,6 +172,7 @@ app.get('/get-all-tasks', (_req, res) => {
   // defaults in backend/.env.example.
   res.json(
     respond([
+      { id: 3759, task_uid: 'mock-qualification-task-uid', code: 'QUALIFICATION', task_order: 2 },
       { id: 3760, task_uid: 'mock-download-task-uid', code: 'DOWNLOAD', task_order: 4 },
       { id: 3761, task_uid: 'mock-manual-fix-task-uid', code: 'MANUAL_FIX', task_order: 5 },
     ]),

@@ -49,10 +49,53 @@ taskContextRouter.post('/resolve', async (req, res) => {
     taskUid = match.task_uid;
   }
 
-  // No file yet — e.g. ACQUISITION's "register a new file" launch. Nothing
-  // further to re-validate; the file doesn't exist until acquisition registers it.
-  if (!pointer.fileId) {
+  // ACQUISITION's "register a new file" launch genuinely has no file yet —
+  // nothing further to re-validate, the file doesn't exist until acquisition
+  // registers it. Every other task's launch SHOULD have a file already
+  // claimed (uw-fe's own "Assign" action claims it before redirecting here),
+  // but none of uw-fe's external-app launch URL schemes actually include a
+  // file_id — so when it's missing and this isn't the acquisition entry
+  // task, ask uw-be "what file does this user currently have active here"
+  // instead of treating it the same as the no-file-yet case.
+  if (!pointer.fileId && taskCode === 'ACQUISITION') {
     res.json({ ok: true, data: { ...pointer, taskCode, taskUid } });
+    return;
+  }
+
+  if (!pointer.fileId) {
+    if (!pointer.userId) {
+      res.status(400).json({ ok: false, error: 'userId is required to resolve the active file when fileId is absent' });
+      return;
+    }
+    const active = await getTaskOngoingFile({
+      projectId: pointer.projectId,
+      taskId: pointer.taskId,
+      userId: pointer.userId,
+    });
+    if (!active.ok || !active.data) {
+      res.status(404).json({ ok: false, error: active.error ?? 'no active file found for this user at this task' });
+      return;
+    }
+    // uw-be's response is snake_case (file_id, job_id, ...) — unlike the
+    // fileId-already-known branch below, pointer has no camelCase fileId of
+    // its own yet for this to fall back to, so it must be mapped explicitly
+    // rather than relying on the raw ...active.data spread (which only adds
+    // file_id as a new, differently-named key, leaving fileId undefined).
+    res.json({
+      ok: true,
+      data: {
+        ...pointer,
+        taskCode,
+        taskUid,
+        fileId: active.data.file_id as number | undefined,
+        jobId: active.data.job_id as number | undefined,
+        batchId: active.data.batch_id as number | undefined,
+        jobName: active.data.job_name as string | undefined,
+        batchName: active.data.batch_name as string | undefined,
+        fileName: active.data.file_name as string | undefined,
+        ...active.data,
+      },
+    });
     return;
   }
 

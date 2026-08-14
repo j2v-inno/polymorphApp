@@ -518,6 +518,40 @@ p.fluid-warning {
   color: var(--fl-warning);
 }
 
+.fluid-badge--qualification {
+  background: var(--fl-primary-soft);
+  color: var(--fl-primary);
+}
+
+.fluid-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-weight: 400;
+  font-size: 0.88rem;
+  color: var(--fl-text);
+}
+
+.fluid-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-md);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.fluid-radio:hover {
+  border-color: var(--fl-primary);
+  background: var(--fl-primary-soft);
+}
+
+.fluid-radio input {
+  accent-color: var(--fl-primary);
+}
+
 /* ---------------------------------------------------------------- table */
 
 .fluid-table {
@@ -579,6 +613,56 @@ p.fluid-warning {
   font-size: 0.84rem;
   color: var(--fl-text-muted);
   margin-left: auto;
+}
+
+.fluid-pdf-frame {
+  width: 100%;
+  height: 520px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-md);
+  margin-bottom: 16px;
+  background: var(--fl-bg);
+}
+
+.fluid-metadata-editor {
+  margin: 20px 0;
+  padding: 16px 18px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-bg);
+}
+
+.fluid-metadata-editor h2 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.fluid-metadata-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fluid-metadata-row input {
+  flex: 1;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-sm);
+  background: var(--fl-surface);
+}
+
+.fluid-metadata-row input:focus {
+  outline: none;
+  border-color: var(--fl-primary);
+  box-shadow: 0 0 0 3px var(--fl-primary-soft);
+}
+
+.fluid-metadata-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .fluid-flag-summary {

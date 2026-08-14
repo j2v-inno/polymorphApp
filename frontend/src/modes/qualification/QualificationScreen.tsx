@@ -4,12 +4,29 @@ import {
   completeQualification,
   getQualificationContext,
   postPagesViewed,
+  updateQualificationMetadata,
   type QualificationContext,
   type QualificationOutcome,
 } from '../../api-client';
 
 interface Props {
   taskContext: TaskContext;
+}
+
+interface MetadataField {
+  key: string;
+  value: string;
+}
+
+// System-managed keys other steps write — kept out of the free-form editor so
+// the operator can't accidentally clobber them with a stray edit.
+const SYSTEM_META_KEYS = new Set(['pages_viewed', 'pages_with_errors', 'parent_file_id', 'split_index', 'chapter_title']);
+
+function extractEditableMetadata(metaData: Record<string, unknown> | null | undefined): MetadataField[] {
+  if (!metaData) return [];
+  return Object.entries(metaData)
+    .filter(([key]) => !SYSTEM_META_KEYS.has(key))
+    .map(([key, value]) => ({ key, value: typeof value === 'string' ? value : JSON.stringify(value) }));
 }
 
 /** §6.2 — page-by-page review with error flagging, then 3-way routing. */
@@ -24,6 +41,9 @@ export function QualificationScreen({ taskContext }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState<QualificationOutcome | null>(null);
+  const [metadataFields, setMetadataFields] = useState<MetadataField[]>([]);
+  const [metadataStatus, setMetadataStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [metadataError, setMetadataError] = useState<string | null>(null);
 
   // TaskContext doesn't carry workflowCode (same gap BatchSplitScreen/DownloadScreen
   // have) — needed to resolve this task's task_uid via get-all-tasks.
@@ -39,6 +59,7 @@ export function QualificationScreen({ taskContext }: Props) {
         return;
       }
       setContext(result.data);
+      setMetadataFields(extractEditableMetadata(result.data.meta_data));
     });
   }
 
@@ -60,6 +81,33 @@ export function QualificationScreen({ taskContext }: Props) {
       else next.add(page);
       return next;
     });
+  }
+
+  function updateMetadataField(index: number, patch: Partial<MetadataField>) {
+    setMetadataFields((prev) => prev.map((field, i) => (i === index ? { ...field, ...patch } : field)));
+  }
+
+  function removeMetadataField(index: number) {
+    setMetadataFields((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function saveMetadata() {
+    if (!context) return;
+    setMetadataStatus('saving');
+    setMetadataError(null);
+    const metaData = Object.fromEntries(
+      metadataFields.filter((field) => field.key.trim()).map((field) => [field.key.trim(), field.value]),
+    );
+    const result = await updateQualificationMetadata(taskContext, context.task_uid, metaData);
+    if (!result.ok) {
+      setMetadataStatus('error');
+      setMetadataError(result.error ?? 'failed to save metadata');
+      return;
+    }
+    // Reflect the server's canonical (key-deduped) view rather than whatever
+    // possibly-duplicate-keyed rows the editor had locally before this save.
+    setMetadataFields(Object.entries(metaData).map(([key, value]) => ({ key, value })));
+    setMetadataStatus('saved');
   }
 
   async function submit(outcome: QualificationOutcome) {
@@ -112,10 +160,15 @@ export function QualificationScreen({ taskContext }: Props) {
     );
   }
 
+  const chapterTitle = context.meta_data?.chapter_title;
+
   return (
     <div className="fluid-screen fluid-screen--qualification">
       <h1>Qualification</h1>
-      <p>{context.file_name}</p>
+      <p>
+        {context.file_name}
+        {typeof chapterTitle === 'string' && chapterTitle ? ` — ${chapterTitle}` : ''}
+      </p>
 
       <div className="fluid-page-nav">
         <button
@@ -138,9 +191,58 @@ export function QualificationScreen({ taskContext }: Props) {
         </label>
       </div>
 
+      {context.input_download_url ? (
+        <iframe
+          className="fluid-pdf-frame"
+          src={`${context.input_download_url}#page=${currentPage}`}
+          title={context.file_name}
+        />
+      ) : (
+        <p className="fluid-alert fluid-alert--warning">
+          No preview available for this file yet — its input_download_url hasn't been populated (this can happen
+          before the previous task's file_task_users session is fully wired; see README's "known gap" note).
+        </p>
+      )}
+
       <p className="fluid-flag-summary">
         Flagged pages: {errorPages.size ? Array.from(errorPages).join(', ') : 'none'}
       </p>
+
+      <div className="fluid-metadata-editor">
+        <h2>Metadata</h2>
+        {metadataFields.length === 0 && <p className="fluid-flag-summary">No custom metadata yet.</p>}
+        {metadataFields.map((field, index) => (
+          <div className="fluid-metadata-row" key={index}>
+            <input
+              placeholder="Field name"
+              value={field.key}
+              onChange={(event) => updateMetadataField(index, { key: event.target.value })}
+            />
+            <input
+              placeholder="Value"
+              value={field.value}
+              onChange={(event) => updateMetadataField(index, { value: event.target.value })}
+            />
+            <button className="fluid-btn fluid-btn--ghost" onClick={() => removeMetadataField(index)}>
+              Remove
+            </button>
+          </div>
+        ))}
+        <div className="fluid-metadata-actions">
+          <button
+            className="fluid-btn fluid-btn--secondary"
+            onClick={() => setMetadataFields((prev) => [...prev, { key: '', value: '' }])}
+          >
+            Add field
+          </button>
+          <button className="fluid-btn fluid-btn--primary" onClick={saveMetadata} disabled={metadataStatus === 'saving'}>
+            {metadataStatus === 'saving' && <span className="fluid-spinner" />}
+            {metadataStatus === 'saving' ? 'Saving…' : 'Save metadata'}
+          </button>
+        </div>
+        {metadataStatus === 'saved' && <p className="fluid-alert fluid-alert--success">Metadata saved.</p>}
+        {metadataStatus === 'error' && <p className="fluid-alert fluid-alert--error">{metadataError}</p>}
+      </div>
 
       <div className="fluid-actions">
         <button className="fluid-btn fluid-btn--primary" onClick={() => submit('clean')} disabled={submitting}>

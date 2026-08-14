@@ -127,6 +127,23 @@ export function postPagesViewed(taskContext: TaskContext, taskUid: string, pages
   });
 }
 
+export function updateQualificationMetadata(
+  taskContext: TaskContext,
+  taskUid: string,
+  metaData: Record<string, string>,
+): Promise<BackendResult<null>> {
+  return callBackend<null>('/api/qualification/metadata', {
+    method: 'POST',
+    body: {
+      projectCode: taskContext.projectCode,
+      taskUid,
+      fileId: taskContext.fileId,
+      jobId: taskContext.jobId,
+      metaData,
+    },
+  });
+}
+
 export type QualificationOutcome = 'clean' | 'rework' | 'archive';
 
 export function completeQualification(
@@ -153,15 +170,32 @@ export function completeQualification(
 // §6.3 /batch
 // ---------------------------------------------------------------------------
 
+export type SplitMethod = 'equal-pages' | 'by-chapter';
+export type ChapterDetectionMethod = 'outline' | 'text-scan' | 'equal-pages';
+
 export interface BatchSplitChild {
   fileId: number;
   taskUid: string;
   splitIndex: number;
   pageNumbers: number[];
-  routedTo: 'manual-fix' | 'download-ready';
+  routedTo: 'manual-fix' | 'download-ready' | 'qualification';
+  label?: string;
 }
 
-export function splitBatch(taskContext: TaskContext, workflowCode: string): Promise<BackendResult<{ children: BatchSplitChild[] }>> {
+export interface BatchSplitResult {
+  children: BatchSplitChild[];
+  splitMethod: SplitMethod;
+  /** True when by-chapter was requested but no chapters were found any way, so it fell back to equal-pages. */
+  usedFallback: boolean;
+  /** How chapters were actually found — only present when splitMethod is 'by-chapter'. */
+  detectionMethod?: ChapterDetectionMethod;
+}
+
+export function splitBatch(
+  taskContext: TaskContext,
+  workflowCode: string,
+  splitMethod: SplitMethod,
+): Promise<BackendResult<BatchSplitResult>> {
   return callBackend('/api/batch/split', {
     method: 'POST',
     body: {
@@ -172,6 +206,7 @@ export function splitBatch(taskContext: TaskContext, workflowCode: string): Prom
       batchId: taskContext.batchId,
       fileId: taskContext.fileId,
       fileName: taskContext.fileName ?? `file-${taskContext.fileId}.pdf`,
+      splitMethod,
     },
   });
 }

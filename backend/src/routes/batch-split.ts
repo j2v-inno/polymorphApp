@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { config } from '../config.js';
-import { splitPdf } from '../pdf/split.js';
+import { splitPdf, type SplitMethod } from '../pdf/split.js';
 import {
   getAllTasks,
   getTaskNextFileWithStart,
@@ -20,6 +20,8 @@ interface SplitBody {
   batchId: number;
   fileId: number;
   fileName: string;
+  /** Defaults to 'equal-pages' (the original §6.3 behavior) when omitted. */
+  splitMethod?: SplitMethod;
 }
 
 function findTaskUid(tasks: TaskGraphNode[], taskCode: string): string | undefined {
@@ -97,10 +99,24 @@ batchSplitRouter.post('/split', async (req, res) => {
   }
   const parentBytes = Buffer.from(await fileResponse.arrayBuffer());
 
+  const splitMethod: SplitMethod = body.splitMethod ?? 'equal-pages';
+
   // Resolve target tasks dynamically (§6.3.1) — never hardcode a task_uid.
   const downloadReadyTaskUid = findTaskUid(taskGraph.data, config.batchSplit.downloadReadyTaskCode);
   const manualFixTaskUid = findTaskUid(taskGraph.data, config.batchSplit.manualFixTaskCode);
-  if (!downloadReadyTaskUid) {
+  const qualificationTaskUid = findTaskUid(taskGraph.data, config.batchSplit.qualificationTaskCode);
+
+  // by-chapter has no pages_with_errors yet (qualification hasn't run on these
+  // chapters — that happens AFTER this split, per-chapter), so every chunk
+  // routes to qualification instead of the equal-pages download/manual-fix split.
+  if (splitMethod === 'by-chapter' && !qualificationTaskUid) {
+    res.status(502).json({
+      ok: false,
+      error: `no task with code "${config.batchSplit.qualificationTaskCode}" found in the workflow graph`,
+    });
+    return;
+  }
+  if (splitMethod === 'equal-pages' && !downloadReadyTaskUid) {
     res.status(502).json({
       ok: false,
       error: `no task with code "${config.batchSplit.downloadReadyTaskCode}" found in the workflow graph`,
@@ -108,21 +124,37 @@ batchSplitRouter.post('/split', async (req, res) => {
     return;
   }
 
-  const chunks = await splitPdf(parentBytes);
+  const { chunks, usedFallback, detectionMethod } = await splitPdf(parentBytes, splitMethod);
 
   const children = [];
   for (const chunk of chunks) {
-    const hasErrors = chunk.pageNumbers.some((p) => pagesWithErrors.has(p));
-    // Intentional deviation from DAG-only routing — flagged to Vibhor per §6.3.1.
-    const targetTaskUid = hasErrors && manualFixTaskUid ? manualFixTaskUid : downloadReadyTaskUid;
+    let targetTaskUid: string;
+    let routedTo: string;
+    if (splitMethod === 'by-chapter' && !usedFallback) {
+      targetTaskUid = qualificationTaskUid!;
+      routedTo = 'qualification';
+    } else {
+      const hasErrors = chunk.pageNumbers.some((p) => pagesWithErrors.has(p));
+      // Intentional deviation from DAG-only routing — flagged to Vibhor per §6.3.1.
+      targetTaskUid = hasErrors && manualFixTaskUid ? manualFixTaskUid : downloadReadyTaskUid!;
+      routedTo = hasErrors ? 'manual-fix' : 'download-ready';
+    }
+
+    const fileName = chunk.label
+      ? `${chunk.label.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '')}.pdf`
+      : `${body.fileName.replace(/\.pdf$/i, '')}-part-${chunk.index + 1}.pdf`;
 
     const registered = await registerFile({
       projectCode: body.projectCode,
       jobId: body.jobId,
       batchId: body.batchId,
       firstTaskUid: targetTaskUid,
-      fileName: `${body.fileName.replace(/\.pdf$/i, '')}-part-${chunk.index + 1}.pdf`,
-      metaData: { parent_file_id: body.fileId, split_index: chunk.index },
+      fileName,
+      metaData: {
+        parent_file_id: body.fileId,
+        split_index: chunk.index,
+        ...(chunk.label ? { chapter_title: chunk.label } : {}),
+      },
     });
     if (!registered.ok || !registered.data) {
       res.status(502).json({ ok: false, error: registered.error ?? `register-file failed for chunk ${chunk.index}` });
@@ -143,9 +175,10 @@ batchSplitRouter.post('/split', async (req, res) => {
       taskUid: targetTaskUid,
       splitIndex: chunk.index,
       pageNumbers: chunk.pageNumbers,
-      routedTo: hasErrors ? 'manual-fix' : 'download-ready',
+      routedTo,
+      label: chunk.label,
     });
   }
 
-  res.json({ ok: true, data: { children } });
+  res.json({ ok: true, data: { children, splitMethod, usedFallback, detectionMethod } });
 });

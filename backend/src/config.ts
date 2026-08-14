@@ -37,5 +37,23 @@ export const config = {
     // (resolveSplitTargetTasks) once confirmed.
     downloadReadyTaskCode: process.env.BATCH_SPLIT_DOWNLOAD_TASK_CODE ?? 'DOWNLOAD',
     manualFixTaskCode: process.env.BATCH_SPLIT_MANUAL_FIX_TASK_CODE ?? 'MANUAL_FIX',
+    // by-chapter split method routes every child here instead of download-ready/
+    // manual-fix — there's no pages_with_errors data yet at split time in that
+    // flow (qualification runs per-chapter AFTER split, not on the whole doc
+    // before it), so each chapter gets reviewed on its own qualification task.
+    qualificationTaskCode: process.env.BATCH_SPLIT_QUALIFICATION_TASK_CODE ?? 'QUALIFICATION',
+    // Heading style is book-specific and there's no way to know it up front, so
+    // this is tunable per project via env rather than hardcoded. Tested against
+    // outline/bookmark titles first, or the first non-blank line of each page
+    // if a PDF has no outline (see pdf/split.ts's splitByChapter). Default
+    // catches "CHAPTER 1"/"Chapter One"/"Part IV" AND bare-roman-numeral
+    // POV-chapter titles like "I Jason"/"Ii Piper" (common in multi-POV YA
+    // series — verified against a real Heroes of Olympus complete-series PDF,
+    // whose chapters are titled exactly that way, not "Chapter N").
+    chapterHeadingPattern: new RegExp(
+      process.env.BATCH_SPLIT_CHAPTER_HEADING_PATTERN ??
+        '^(chapter|part)\\s+([0-9]+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten)\\b|^[ivxlcdm]+[.:]?\\s+\\S+',
+      'i',
+    ),
   },
 };
