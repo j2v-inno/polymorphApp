@@ -26,7 +26,11 @@ const DETECTION_METHOD_LABEL: Record<ChapterDetectionMethod, string> = {
  * qualification task since qualification hasn't run on these chapters yet).
  */
 export function BatchSplitScreen({ taskContext }: Props) {
-  const [workflowCode, setWorkflowCode] = useState('');
+  // Pre-filled from the launch context when available (real uw-fe launch
+  // URLs do carry workflow_code — task-context.ts resolves it into
+  // taskContext.workflowCode). Still a manual, editable field for launch
+  // paths that don't supply it, rather than a hard requirement.
+  const [workflowCode, setWorkflowCode] = useState(taskContext.workflowCode ?? '');
   const [splitMethod, setSplitMethod] = useState<SplitMethod>('equal-pages');
   const [status, setStatus] = useState<'idle' | 'splitting' | 'error' | 'done'>('idle');
   const [error, setError] = useState<string | null>(null);

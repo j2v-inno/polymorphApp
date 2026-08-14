@@ -31,7 +31,9 @@ function extractEditableMetadata(metaData: Record<string, unknown> | null | unde
 
 /** §6.2 — page-by-page review with error flagging, then 3-way routing. */
 export function QualificationScreen({ taskContext }: Props) {
-  const [workflowCode, setWorkflowCode] = useState('');
+  // Pre-filled from the launch context when available — see the same note
+  // in BatchSplitScreen.tsx.
+  const [workflowCode, setWorkflowCode] = useState(taskContext.workflowCode ?? '');
   const [context, setContext] = useState<QualificationContext | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);

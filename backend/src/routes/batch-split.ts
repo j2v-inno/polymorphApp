@@ -1,18 +1,13 @@
 import { Router } from 'express';
 import { config } from '../config.js';
 import { splitPdf, type SplitMethod } from '../pdf/split.js';
-import {
-  getAllTasks,
-  getTaskNextFileWithStart,
-  registerFile,
-  updateFileStatus,
-  type TaskGraphNode,
-} from '../uwbe-client/endpoints.js';
+import { getAllTasks, registerFile, resolveActiveFile, updateFileStatus, type TaskGraphNode } from '../uwbe-client/endpoints.js';
 import { putRawBytes } from '../uwbe-client/http.js';
 
 export const batchSplitRouter = Router();
 
 interface SplitBody {
+  projectId: number;
   projectCode: string;
   workflowCode: string;
   taskId: number;
@@ -20,6 +15,7 @@ interface SplitBody {
   batchId: number;
   fileId: number;
   fileName: string;
+  userId?: number;
   /** Defaults to 'equal-pages' (the original §6.3 behavior) when omitted. */
   splitMethod?: SplitMethod;
 }
@@ -35,11 +31,9 @@ function findTaskUid(tasks: TaskGraphNode[], taskCode: string): string | undefin
  * routed per §6.3.1 (chunks touching pages_with_errors go to the manual-fix
  * task; clean chunks go to the download-ready task).
  *
- * get-task-ongoing-file only reads an ALREADY-STARTED file_task_users session
- * — it 400s the first time this screen opens for a file that just advanced
- * here via the DAG. get-task-next-file-with-start is what actually claims/
- * starts that session and returns the file's data in the same call (verified
- * live against uw-be) — used here instead, same as qualification.ts.
+ * resolveActiveFile handles both "file already claimed by uw-fe's Assign
+ * action" (the real launch-URL case) and "file just advanced here via the
+ * DAG, never claimed" (the original assumption) — see its own doc comment.
  */
 batchSplitRouter.post('/split', async (req, res) => {
   const body = req.body as SplitBody;
@@ -55,10 +49,13 @@ batchSplitRouter.post('/split', async (req, res) => {
     return;
   }
 
-  const parentContext = await getTaskNextFileWithStart({
+  const parentContext = await resolveActiveFile({
+    projectId: body.projectId,
     projectCode: body.projectCode,
+    taskId: body.taskId,
     taskUid: currentTask.task_uid,
     fileId: body.fileId,
+    jobId: body.jobId,
   });
   if (!parentContext.ok || !parentContext.data) {
     res.status(404).json({ ok: false, error: parentContext.error ?? 'could not resolve parent file context' });
@@ -69,7 +66,7 @@ batchSplitRouter.post('/split', async (req, res) => {
   if (!downloadUrl) {
     res.status(502).json({
       ok: false,
-      error: 'get-task-next-file-with-start did not return an input_download_url for the parent file',
+      error: 'could not resolve an input_download_url for the parent file',
     });
     return;
   }
@@ -85,6 +82,7 @@ batchSplitRouter.post('/split', async (req, res) => {
     fileId: body.fileId,
     previousFileStatus: 'I',
     fileStatus: 'C',
+    userId: body.userId,
   });
   if (!parentCompletion.ok) {
     res.status(502).json({ ok: false, error: parentCompletion.error ?? 'update-file-status failed for parent' });

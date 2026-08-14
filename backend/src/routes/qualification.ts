@@ -1,30 +1,25 @@
 import { Router } from 'express';
-import {
-  flowBackFileTask,
-  getAllTasks,
-  getTaskNextFileWithStart,
-  updateFileMetaData,
-  updateFileStatus,
-} from '../uwbe-client/endpoints.js';
+import { flowBackFileTask, getAllTasks, resolveActiveFile, updateFileMetaData, updateFileStatus } from '../uwbe-client/endpoints.js';
 
 export const qualificationRouter = Router();
 
 /**
- * §6.2 step 1 — get-task-ongoing-file (the doc's original choice) only reads an
- * ALREADY-STARTED file_task_users session; it 400s the first time a screen opens
- * for a file that just advanced here via the DAG. get-task-next-file-with-start
- * is what actually claims/starts that session (verified live against uw-be) —
- * needs task_uid, which TaskContext doesn't carry directly, so it's resolved via
- * get-all-tasks + matching on taskId (same pattern as batch-split.ts/download.ts).
+ * §6.2 step 1 — resolveActiveFile handles both "file already claimed by
+ * uw-fe's Assign action" and "file just advanced here via the DAG, never
+ * claimed" (see its own doc comment). Needs task_uid, which TaskContext
+ * doesn't carry directly, so it's resolved via get-all-tasks + matching on
+ * taskId (same pattern as batch-split.ts/download.ts).
  */
 qualificationRouter.get('/context', async (req, res) => {
+  const projectId = Number(req.query.projectId);
   const projectCode = String(req.query.projectCode ?? '');
   const workflowCode = String(req.query.workflowCode ?? '');
   const taskId = Number(req.query.taskId);
   const fileId = Number(req.query.fileId);
+  const jobId = req.query.jobId ? Number(req.query.jobId) : undefined;
 
-  if (!projectCode || !workflowCode || !taskId || !fileId) {
-    res.status(400).json({ ok: false, error: 'projectCode, workflowCode, taskId, and fileId are required' });
+  if (!projectId || !projectCode || !workflowCode || !taskId || !fileId) {
+    res.status(400).json({ ok: false, error: 'projectId, projectCode, workflowCode, taskId, and fileId are required' });
     return;
   }
 
@@ -39,7 +34,7 @@ qualificationRouter.get('/context', async (req, res) => {
     return;
   }
 
-  const result = await getTaskNextFileWithStart({ projectCode, taskUid: currentTask.task_uid, fileId });
+  const result = await resolveActiveFile({ projectId, projectCode, taskId, taskUid: currentTask.task_uid, fileId, jobId });
   if (!result.ok || !result.data) {
     res.status(404).json({ ok: false, error: result.error });
     return;
@@ -116,6 +111,7 @@ interface CompleteBody {
   outcome: 'clean' | 'rework' | 'archive';
   flowbackReason?: string;
   nextTask?: string;
+  userId?: number;
 }
 
 /** §6.2 step 3 — 3-way routing outcome, chosen by the operator on the qualification screen. */
@@ -143,6 +139,7 @@ qualificationRouter.post('/complete', async (req, res) => {
       taskUid: body.taskUid,
       fileId: body.fileId,
       flowbackReason: body.flowbackReason,
+      userId: body.userId,
     });
     if (!result.ok) {
       res.status(502).json({ ok: false, error: result.error });
@@ -163,6 +160,7 @@ qualificationRouter.post('/complete', async (req, res) => {
     fileStatus: 'C',
     metaData: body.pagesWithErrors.length ? { pages_with_errors: body.pagesWithErrors } : undefined,
     nextTask: body.nextTask,
+    userId: body.userId,
   });
   if (!result.ok) {
     res.status(502).json({ ok: false, error: result.error });

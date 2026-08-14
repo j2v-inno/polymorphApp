@@ -22,7 +22,9 @@ interface Props {
  * affordance until sibling discovery is confirmed.
  */
 export function DownloadScreen({ taskContext }: Props) {
-  const [workflowCode, setWorkflowCode] = useState('');
+  // Pre-filled from the launch context when available — see the same note
+  // in BatchSplitScreen.tsx.
+  const [workflowCode, setWorkflowCode] = useState(taskContext.workflowCode ?? '');
   const [fileIds, setFileIds] = useState<number[]>(taskContext.fileId ? [taskContext.fileId] : []);
   const [extraFileId, setExtraFileId] = useState('');
   const [links, setLinks] = useState<DownloadLink[]>([]);

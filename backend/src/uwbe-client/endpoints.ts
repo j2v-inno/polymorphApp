@@ -72,6 +72,16 @@ export interface UpdateFileStatusParams {
   metaData?: Record<string, unknown>;
   onholdReason?: string;
   nextTask?: string;
+  /**
+   * uw-be defaults this to 1 (system) when omitted — a real gap: the file's
+   * open file_task_users session belongs to whoever actually claimed it
+   * (uw-fe's real "Assign" action claims as the logged-in user), and the
+   * completion UPDATE is guarded on `user_id = ? and file_status_ended is
+   * null` matching THAT session. Omitting userId here throws "File is
+   * already updated." the moment the claiming user isn't 1 — which every
+   * real (non-test-default) uw-fe user is.
+   */
+  userId?: number;
 }
 
 /** Style A (TaskProcessController@update_file_status) — `data` is always null on success. */
@@ -91,6 +101,7 @@ export function updateFileStatus(params: UpdateFileStatusParams): Promise<UwbeRe
       meta_data: params.metaData,
       onhold_reason: params.onholdReason,
       next_task: params.nextTask,
+      user_id: params.userId,
     },
   });
 }
@@ -196,6 +207,79 @@ export async function getTaskOngoingFile(params: GetTaskOngoingFileParams): Prom
   return { ...result, data: result.data.file };
 }
 
+export interface ResolveActiveFileParams {
+  projectId: number;
+  projectCode: string;
+  taskId: number;
+  taskUid: string;
+  fileId: number;
+  jobId?: number;
+}
+
+export interface ActiveFileContext {
+  meta_data?: Record<string, unknown> | null;
+  input_download_url?: string | null;
+  s3_path?: string | null;
+  taskUid: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Resolves the file for a task screen regardless of whether it's already
+ * claimed or not — a real gap this exposed: get-task-next-file-with-start
+ * (the original choice, see its own doc comment) only finds YetToStart files,
+ * which is correct the first time a file advances here via the DAG with no
+ * session yet, but wrong once uw-fe's own "Assign" action has already claimed
+ * it (InProgress) before redirecting to this app's external-app launch URL —
+ * the real-world case for any task reached that way. Tries
+ * get-task-ongoing-file (handles "already claimed") first, falls back to
+ * get-task-next-file-with-start (handles "fresh from the DAG, never
+ * claimed") — and normalizes the two endpoints' differently-named download
+ * URL fields (download_url/s3_file_path vs input_download_url/s3_path) into
+ * one shape so callers don't need to care which path resolved it.
+ */
+export async function resolveActiveFile(params: ResolveActiveFileParams): Promise<UwbeResult<ActiveFileContext>> {
+  const ongoing = await getTaskOngoingFile({
+    projectId: params.projectId,
+    taskId: params.taskId,
+    fileId: params.fileId,
+    jobId: params.jobId,
+  });
+  if (ongoing.ok && ongoing.data) {
+    return {
+      ok: true,
+      error: null,
+      httpStatus: ongoing.httpStatus,
+      data: {
+        ...ongoing.data,
+        input_download_url: ongoing.data.download_url as string | null | undefined,
+        s3_path: ongoing.data.s3_file_path as string | null | undefined,
+        taskUid: params.taskUid,
+      },
+    };
+  }
+
+  const started = await getTaskNextFileWithStart({
+    projectCode: params.projectCode,
+    taskUid: params.taskUid,
+    fileId: params.fileId,
+  });
+  if (!started.ok || !started.data) {
+    return {
+      ok: false,
+      data: null,
+      error: started.error ?? ongoing.error ?? 'could not resolve an active file',
+      httpStatus: started.httpStatus,
+    };
+  }
+  return {
+    ok: true,
+    error: null,
+    httpStatus: started.httpStatus,
+    data: { ...started.data, taskUid: params.taskUid },
+  };
+}
+
 export interface UpdateFileMetaDataParams {
   projectCode: string;
   taskUid: string;
@@ -226,6 +310,8 @@ export interface FlowBackFileTaskParams {
   flowbackReason: string;
   isReset?: boolean;
   assignedTo?: number;
+  /** Same user_id-defaults-to-1 gap as updateFileStatus — see its param doc. */
+  userId?: number;
 }
 
 /**
@@ -244,6 +330,7 @@ export function flowBackFileTask(params: FlowBackFileTaskParams): Promise<UwbeRe
       flowback_reason: params.flowbackReason,
       is_reset: params.isReset,
       assigned_to: params.assignedTo,
+      user_id: params.userId,
     },
   });
 }
@@ -258,6 +345,8 @@ export interface RegisterFileParams {
   batchId: number;
   firstTaskUid: string;
   fileName: string;
+  /** Defaults to fileName — same pattern as registerJobBatchFile's filePath. */
+  filePath?: string;
   metaData?: Record<string, unknown>;
 }
 
@@ -279,6 +368,12 @@ export interface RegisterFileResult {
  * not base64 JSON — confirmed by hitting the real endpoint directly. Too small
  * for realistic split chunks, so this always uses the same register-then-PUT
  * pattern as acquisition (registerJobBatchFile + putRawBytes).
+ *
+ * file_path and file_status are both `required` server-side (the latter must
+ * be exactly 'Y') — never previously exercised far enough to hit this: every
+ * earlier real-uw-be test was blocked upstream by the input_download_url gap
+ * before reaching this call at all, so the missing fields went unnoticed
+ * until that gap was actually fixed.
  */
 export function registerFile(params: RegisterFileParams): Promise<UwbeResult<RegisterFileResult>> {
   assertProjectCode(params.projectCode);
@@ -290,6 +385,8 @@ export function registerFile(params: RegisterFileParams): Promise<UwbeResult<Reg
       batch_id: params.batchId,
       first_task_uid: params.firstTaskUid,
       file_name: params.fileName,
+      file_path: params.filePath ?? params.fileName,
+      file_status: 'Y',
       // Confirmed required: without start_task=true, file_output_upload_url etc.
       // never populate at all, even with S3 storage configured correctly
       // (TaskProcessController.php:1300 gates the whole block on it).

@@ -106,10 +106,12 @@ export function getQualificationContext(taskContext: TaskContext, workflowCode: 
   return callBackend<QualificationContext>('/api/qualification/context', {
     method: 'GET',
     query: {
+      projectId: taskContext.projectId,
       projectCode: taskContext.projectCode,
       workflowCode,
       taskId: taskContext.taskId,
       fileId: taskContext.fileId,
+      jobId: taskContext.jobId,
     },
   });
 }
@@ -162,6 +164,7 @@ export function completeQualification(
       pagesWithErrors,
       outcome,
       flowbackReason,
+      userId: taskContext.userId,
     },
   });
 }
@@ -199,6 +202,7 @@ export function splitBatch(
   return callBackend('/api/batch/split', {
     method: 'POST',
     body: {
+      projectId: taskContext.projectId,
       projectCode: taskContext.projectCode,
       workflowCode,
       taskId: taskContext.taskId,
@@ -206,6 +210,7 @@ export function splitBatch(
       batchId: taskContext.batchId,
       fileId: taskContext.fileId,
       fileName: taskContext.fileName ?? `file-${taskContext.fileId}.pdf`,
+      userId: taskContext.userId,
       splitMethod,
     },
   });
