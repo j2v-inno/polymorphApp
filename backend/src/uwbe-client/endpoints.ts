@@ -348,6 +348,8 @@ export interface RegisterFileParams {
   /** Defaults to fileName — same pattern as registerJobBatchFile's filePath. */
   filePath?: string;
   metaData?: Record<string, unknown>;
+  /** Who register-file's start_task claims the file as — uw-be defaults to user 1 when omitted. */
+  userId?: number;
 }
 
 export interface RegisterFileResult {
@@ -392,6 +394,7 @@ export function registerFile(params: RegisterFileParams): Promise<UwbeResult<Reg
       // (TaskProcessController.php:1300 gates the whole block on it).
       start_task: true,
       meta_data: params.metaData,
+      user_id: params.userId,
     },
   });
 }
@@ -432,9 +435,9 @@ export interface GetFileTaskOutputParams {
   /** Confirmed required (TaskProcessController.php:4511-4521) — the task the file currently sits at. */
   taskUid: string;
   fileId: number;
-  /** Confirmed required alongside task_uid/project_code/file_id. */
-  jobName: string;
-  batchName: string;
+  /** Both nullable server-side (get_file_task_output's own validator) — CHAPTERFLOW's files have no batch at all. */
+  jobName?: string;
+  batchName?: string;
 }
 
 export interface FileTaskOutput {
@@ -456,8 +459,8 @@ export async function getFileTaskOutput(params: GetFileTaskOutputParams): Promis
       project_code: params.projectCode,
       task_uid: params.taskUid,
       file_id: params.fileId,
-      job_name: params.jobName,
-      batch_name: params.batchName,
+      job_name: params.jobName || undefined,
+      batch_name: params.batchName || undefined,
     },
   });
   if (!result.ok || !result.data) return { ...result, data: null };

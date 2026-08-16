@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { TaskContext } from '../../types';
 import {
   completeQualification,
+  fetchQualificationContent,
   getQualificationContext,
   postPagesViewed,
   updateQualificationMetadata,
@@ -20,7 +21,14 @@ interface MetadataField {
 
 // System-managed keys other steps write — kept out of the free-form editor so
 // the operator can't accidentally clobber them with a stray edit.
-const SYSTEM_META_KEYS = new Set(['pages_viewed', 'pages_with_errors', 'parent_file_id', 'split_index', 'chapter_title']);
+const SYSTEM_META_KEYS = new Set([
+  'pages_viewed',
+  'pages_with_errors',
+  'parent_file_id',
+  'split_index',
+  'chapter_title',
+  'content_format',
+]);
 
 function extractEditableMetadata(metaData: Record<string, unknown> | null | undefined): MetadataField[] {
   if (!metaData) return [];
@@ -46,6 +54,10 @@ export function QualificationScreen({ taskContext }: Props) {
   const [metadataFields, setMetadataFields] = useState<MetadataField[]>([]);
   const [metadataStatus, setMetadataStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [metadataError, setMetadataError] = useState<string | null>(null);
+  // Structured-content viewer (Transformation's XML/JSON output) instead of
+  // the PDF iframe — see meta_data.content_format below.
+  const [rawContent, setRawContent] = useState<string | null>(null);
+  const [contentError, setContentError] = useState<string | null>(null);
 
   // TaskContext doesn't carry workflowCode (same gap BatchSplitScreen/DownloadScreen
   // have) — needed to resolve this task's task_uid via get-all-tasks.
@@ -65,16 +77,36 @@ export function QualificationScreen({ taskContext }: Props) {
     });
   }
 
+  // Set by the Transformation task's meta_data — when present, this file is
+  // structured XML/JSON, not a PDF, so the page-nav/iframe viewer below is
+  // replaced by a plain text viewer and page-view tracking doesn't apply.
+  const contentFormat = context?.meta_data?.content_format as 'xml' | 'json' | undefined;
+
   // §6.2 step 2 — non-audited telemetry, fire-and-forget on every page view.
+  // N/A for structured content (no page concept to track).
   useEffect(() => {
-    if (!context) return;
+    if (!context || contentFormat) return;
     setViewedPages((prev) => {
       if (prev.includes(currentPage)) return prev;
       const next = [...prev, currentPage];
       void postPagesViewed(taskContext, context.task_uid, next);
       return next;
     });
-  }, [context, currentPage, taskContext]);
+  }, [context, contentFormat, currentPage, taskContext]);
+
+  // Fetches the transformed document's raw text via the backend proxy
+  // (avoids the browser hitting CORS on the presigned download URL directly).
+  useEffect(() => {
+    if (!context || !contentFormat || !context.input_download_url) return;
+    setContentError(null);
+    fetchQualificationContent(context.input_download_url).then((result) => {
+      if (!result.ok || !result.data) {
+        setContentError(result.error ?? 'failed to load content');
+        return;
+      }
+      setRawContent(result.data.content);
+    });
+  }, [context, contentFormat]);
 
   function toggleError(page: number) {
     setErrorPages((prev) => {
@@ -172,43 +204,57 @@ export function QualificationScreen({ taskContext }: Props) {
         {typeof chapterTitle === 'string' && chapterTitle ? ` — ${chapterTitle}` : ''}
       </p>
 
-      <div className="fluid-page-nav">
-        <button
-          className="fluid-btn fluid-btn--secondary"
-          onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-          disabled={currentPage <= 1}
-        >
-          ← Previous
-        </button>
-        <span>
-          Page {currentPage}
-          {viewedPages.includes(currentPage) ? ' (viewed)' : ''}
-        </span>
-        <button className="fluid-btn fluid-btn--secondary" onClick={() => setCurrentPage((page) => page + 1)}>
-          Next →
-        </button>
-        <label>
-          <input type="checkbox" checked={errorPages.has(currentPage)} onChange={() => toggleError(currentPage)} />
-          Flag this page as an error
-        </label>
-      </div>
-
-      {context.input_download_url ? (
-        <iframe
-          className="fluid-pdf-frame"
-          src={`${context.input_download_url}#page=${currentPage}`}
-          title={context.file_name}
-        />
+      {contentFormat ? (
+        <>
+          <p className="fluid-flag-summary">Format: {contentFormat.toUpperCase()} (from Transformation)</p>
+          {contentError && <p className="fluid-alert fluid-alert--error">{contentError}</p>}
+          {rawContent !== null ? (
+            <pre className="fluid-content-viewer">{rawContent}</pre>
+          ) : (
+            !contentError && <p className="fluid-flag-summary">Loading content…</p>
+          )}
+        </>
       ) : (
-        <p className="fluid-alert fluid-alert--warning">
-          No preview available for this file yet — its input_download_url hasn't been populated (this can happen
-          before the previous task's file_task_users session is fully wired; see README's "known gap" note).
-        </p>
-      )}
+        <>
+          <div className="fluid-page-nav">
+            <button
+              className="fluid-btn fluid-btn--secondary"
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={currentPage <= 1}
+            >
+              ← Previous
+            </button>
+            <span>
+              Page {currentPage}
+              {viewedPages.includes(currentPage) ? ' (viewed)' : ''}
+            </span>
+            <button className="fluid-btn fluid-btn--secondary" onClick={() => setCurrentPage((page) => page + 1)}>
+              Next →
+            </button>
+            <label>
+              <input type="checkbox" checked={errorPages.has(currentPage)} onChange={() => toggleError(currentPage)} />
+              Flag this page as an error
+            </label>
+          </div>
 
-      <p className="fluid-flag-summary">
-        Flagged pages: {errorPages.size ? Array.from(errorPages).join(', ') : 'none'}
-      </p>
+          {context.input_download_url ? (
+            <iframe
+              className="fluid-pdf-frame"
+              src={`${context.input_download_url}#page=${currentPage}`}
+              title={context.file_name}
+            />
+          ) : (
+            <p className="fluid-alert fluid-alert--warning">
+              No preview available for this file yet — its input_download_url hasn't been populated (this can happen
+              before the previous task's file_task_users session is fully wired; see README's "known gap" note).
+            </p>
+          )}
+
+          <p className="fluid-flag-summary">
+            Flagged pages: {errorPages.size ? Array.from(errorPages).join(', ') : 'none'}
+          </p>
+        </>
+      )}
 
       <div className="fluid-metadata-editor">
         <h2>Metadata</h2>

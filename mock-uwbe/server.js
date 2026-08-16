@@ -19,7 +19,16 @@ app.use((req, _res, next) => {
   console.log(`[mock-uwbe] ${req.method} ${req.path}`);
   next();
 });
-app.use(express.json({ limit: '50mb' }));
+// Excludes /mock-upload/:fileId — that route stands in for a presigned S3 PUT
+// and must accept ANY content-type as raw bytes (its own express.raw below
+// handles that). Without this exclusion, a PUT with Content-Type: application/
+// json or application/xml (added by the Transformation task, which uploads
+// its own JSON/XML output through this same endpoint — previously every
+// caller here only ever uploaded PDFs) gets consumed by this global JSON
+// parser first, leaving req.body as an already-parsed object instead of a
+// Buffer by the time express.raw runs, which then throws trying to
+// Buffer.from() a plain object.
+app.use(express.json({ limit: '50mb', type: (req) => !req.path.startsWith('/mock-upload/') }));
 
 const respond = (data, message = 'Operation completed successfully', code = 200) => ({
   success: true,
@@ -175,6 +184,9 @@ app.get('/get-all-tasks', (_req, res) => {
       { id: 3759, task_uid: 'mock-qualification-task-uid', code: 'QUALIFICATION', task_order: 2 },
       { id: 3760, task_uid: 'mock-download-task-uid', code: 'DOWNLOAD', task_order: 4 },
       { id: 3761, task_uid: 'mock-manual-fix-task-uid', code: 'MANUAL_FIX', task_order: 5 },
+      // New task (2026-08-15): by-chapter batch-split now routes to this instead
+      // of QUALIFICATION directly — see README.md's "Transformation" section.
+      { id: 3762, task_uid: 'mock-transformation-task-uid', code: 'TRANSFORMATION', task_order: 3 },
     ]),
   );
 });

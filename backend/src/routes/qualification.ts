@@ -42,6 +42,30 @@ qualificationRouter.get('/context', async (req, res) => {
   res.json({ ok: true, data: { ...result.data, task_uid: currentTask.task_uid } });
 });
 
+/**
+ * Server-side fetch of a file's own (already-authenticated, presigned)
+ * input_download_url — avoids the browser hitting CORS on the S3/MinIO
+ * signed URL directly, same technique batch-split.ts already uses to fetch a
+ * parent file's bytes. Used by the qualification screen's structured-content
+ * viewer (content_format: 'xml'|'json' in meta_data) to display transformed
+ * output as text instead of a PDF iframe.
+ */
+qualificationRouter.get('/content-proxy', async (req, res) => {
+  const url = String(req.query.url ?? '');
+  if (!/^https?:\/\//i.test(url)) {
+    res.status(400).json({ ok: false, error: 'url must be an http(s) URL' });
+    return;
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    res.status(502).json({ ok: false, error: `failed to fetch content: HTTP ${response.status}` });
+    return;
+  }
+  const content = await response.text();
+  res.json({ ok: true, data: { content } });
+});
+
 interface PagesViewedBody {
   projectCode: string;
   taskUid: string;

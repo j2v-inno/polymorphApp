@@ -1,0 +1,63 @@
+# Deploy-time compose file, used on environment VMs by
+# .github/workflows/deploy.yml (and manually via manual-deploy.sh until a
+# self-hosted runner is registered for this repo — see README.md
+# "Deployment"). Images are built once in CI and pulled from GHCR — never
+# built on the VM, mirroring uw-fe/uw-be's own docker-compose.deploy.yml files.
+#
+# Both services are exposed on plain host ports; the actual public routing
+# (TLS termination, /ext/app/wa + /ext/app/api subpaths under
+# rnd-fe-unifiedworkflow.innodata.com) lives in the box's own hand-maintained
+# nginx config, spliced in from nginx/rnd-fe-unifiedworkflow.snippet.conf —
+# not managed by this compose file or by transapp itself.
+
+name: transapp-${DEPLOY_ENV:-dev}
+
+services:
+  backend:
+    image: ghcr.io/innodata-platform-engineering/transapp-backend:${IMAGE_TAG:?IMAGE_TAG not set}
+    container_name: transapp-backend-${DEPLOY_ENV:-dev}
+    ports:
+      - "${BACKEND_PORT:-4100}:4100"
+    environment:
+      PORT: 4100
+      UWBE_BASE_URL: ${UWBE_BASE_URL:?UWBE_BASE_URL not set}
+      UWBE_API_TOKEN: ${UWBE_API_TOKEN:?UWBE_API_TOKEN not set}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://rnd-fe-unifiedworkflow.innodata.com}
+      ACQUISITION_GATE_MODE: ${ACQUISITION_GATE_MODE:-flag}
+      ACQUISITION_MIN_AVG_CHARS_PER_PAGE: ${ACQUISITION_MIN_AVG_CHARS_PER_PAGE:-20}
+      BATCH_SPLIT_MIN_CHUNKS: ${BATCH_SPLIT_MIN_CHUNKS:-2}
+      BATCH_SPLIT_MAX_CHUNKS: ${BATCH_SPLIT_MAX_CHUNKS:-5}
+      BATCH_SPLIT_TARGET_PAGES_PER_CHUNK: ${BATCH_SPLIT_TARGET_PAGES_PER_CHUNK:-20}
+      BATCH_SPLIT_DOWNLOAD_TASK_CODE: ${BATCH_SPLIT_DOWNLOAD_TASK_CODE:-DOWNLOAD}
+      BATCH_SPLIT_MANUAL_FIX_TASK_CODE: ${BATCH_SPLIT_MANUAL_FIX_TASK_CODE:-MANUAL_FIX}
+      BATCH_SPLIT_QUALIFICATION_TASK_CODE: ${BATCH_SPLIT_QUALIFICATION_TASK_CODE:-QUALIFICATION}
+      BATCH_SPLIT_TRANSFORM_TASK_CODE: ${BATCH_SPLIT_TRANSFORM_TASK_CODE:-TRANSFORMATION}
+      BATCH_SPLIT_CHAPTER_HEADING_PATTERN: ${BATCH_SPLIT_CHAPTER_HEADING_PATTERN:-}
+      # §13 #6 — standalone-mode auth is still an open blocker (FLUID_APP_DEV_CONTEXT.md).
+      # True here only because this deploy IS the standalone/demo path; revisit
+      # before this is anything other than an internal RND demo.
+      ALLOW_UNAUTHENTICATED_STANDALONE: ${ALLOW_UNAUTHENTICATED_STANDALONE:-true}
+    restart: unless-stopped
+    healthcheck:
+      # busybox wget, not curl — the node:20-alpine runner image doesn't have
+      # curl installed (same note as uw-fe's own healthcheck).
+      test: ["CMD", "wget", "-qO-", "http://localhost:4100/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    image: ghcr.io/innodata-platform-engineering/transapp-frontend:${IMAGE_TAG:?IMAGE_TAG not set}
+    container_name: transapp-frontend-${DEPLOY_ENV:-dev}
+    ports:
+      - "${FRONTEND_PORT:-9100}:80"
+    restart: unless-stopped
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80${BASE_PATH:-/ext/app/wa}/index.html"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

@@ -37,11 +37,18 @@ export const config = {
     // (resolveSplitTargetTasks) once confirmed.
     downloadReadyTaskCode: process.env.BATCH_SPLIT_DOWNLOAD_TASK_CODE ?? 'DOWNLOAD',
     manualFixTaskCode: process.env.BATCH_SPLIT_MANUAL_FIX_TASK_CODE ?? 'MANUAL_FIX',
-    // by-chapter split method routes every child here instead of download-ready/
-    // manual-fix — there's no pages_with_errors data yet at split time in that
-    // flow (qualification runs per-chapter AFTER split, not on the whole doc
-    // before it), so each chapter gets reviewed on its own qualification task.
+    // by-chapter split method routes every child to the Transformation task
+    // (below) instead of download-ready/manual-fix — there's no
+    // pages_with_errors data yet at split time in that flow (qualification
+    // runs per-chapter AFTER transformation, not on the whole doc before
+    // splitting), so each chapter gets transformed then reviewed on its own
+    // qualification task. qualificationTaskCode itself is still used — by
+    // Transformation's own completion, to resolve where each transformed
+    // chapter routes next (routes/transformation.ts).
     qualificationTaskCode: process.env.BATCH_SPLIT_QUALIFICATION_TASK_CODE ?? 'QUALIFICATION',
+    // Where by-chapter routes each split chapter (PDF text -> XML/JSON runs
+    // here before qualification reviews the structured output).
+    transformTaskCode: process.env.BATCH_SPLIT_TRANSFORM_TASK_CODE ?? 'TRANSFORMATION',
     // Heading style is book-specific and there's no way to know it up front, so
     // this is tunable per project via env rather than hardcoded. Tested against
     // outline/bookmark titles first, or the first non-blank line of each page

@@ -93,10 +93,23 @@ $dl = makeTask(array_merge(cloneTaskFields($sourceDl), [
     'external_app_integration' => $externalAppConfig,
 ]));
 
+// BATCH_SPLIT is deliberately NOT wired to a next task. It's a fan-out point —
+// batch-split.ts's /api/batch/split handler already advances each chapter/chunk
+// itself via an explicit register-file call per child (see batch-split.ts).
+// A task_next_tasks edge here would make uw-be's own DAG engine ALSO auto-advance
+// the original (already fully split) parent file forward to QUALIFICATION the
+// moment it's marked Completed — producing a second, broken "ghost" file at
+// QUALIFICATION with the parent's own file_id, no chapter content, and no S3
+// bytes anywhere it could ever resolve from. Real chapter children are always
+// separate, newly-registered file_ids, never this one. (Discovered when such a
+// ghost was the one a plain "most recently started" lookup surfaced, resolving
+// to a permanently-null input_download_url in transapp's QualificationScreen.)
+//
+// input_source values are 'T'/'TI'/'O'/'OI' (not 'out' — that's not a valid
+// value; use the literal task_uid-based codes uw-be expects).
 \Illuminate\Support\Facades\DB::table('task_next_tasks')->insert([
-    ['task_id' => $acq->id, 'next_task_id' => $split->id, 'input_source' => 'out'],
-    ['task_id' => $split->id, 'next_task_id' => $qual->id, 'input_source' => 'out'],
-    ['task_id' => $qual->id, 'next_task_id' => $dl->id, 'input_source' => 'out'],
+    ['task_id' => $acq->id, 'next_task_id' => $split->id, 'input_source' => 'T'],
+    ['task_id' => $qual->id, 'next_task_id' => $dl->id, 'input_source' => 'T'],
 ]);
 
 echo "CHAPTERFLOW created: workflow_id={$workflow->id}\n";

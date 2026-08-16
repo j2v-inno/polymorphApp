@@ -59,7 +59,14 @@ async function copyChunk(sourceDoc: PDFDocument, pageNumbers: number[], index: n
     pageNumbers.map((pageNumber) => pageNumber - 1),
   );
   copiedPages.forEach((page) => chunkDoc.addPage(page));
-  const bytes = await chunkDoc.save();
+  // useObjectStreams:false — pdf-lib defaults to compressed object streams,
+  // which pdf-parse v1's bundled (pre-2018) pdf.js can throw "Invalid PDF
+  // structure" / "Unknown compression method in flate stream" on. Split
+  // chunks were previously only ever used as final downloadable/previewable
+  // PDFs, never re-parsed for text — the new Transformation task
+  // (transformation.ts) is the first thing that runs pdf-parse against a
+  // chunk's own bytes again, which is what surfaced this.
+  const bytes = await chunkDoc.save({ useObjectStreams: false });
   return { index, pageNumbers, bytes: Buffer.from(bytes), label };
 }
 
@@ -76,8 +83,11 @@ async function splitByEqualPages(sourceDoc: PDFDocument): Promise<PdfChunk[]> {
  * per page during its normal walk — capturing into `pages` here gives an
  * authoritative page-indexed array instead of guessing at page boundaries by
  * splitting pdf-parse's own concatenated `result.text` output.
+ *
+ * Fallback only (see extractPerPageText below) — kept for when the direct
+ * pdf.js path (loadLegacyPdfjs) is unavailable.
  */
-async function extractPerPageText(pdfBytes: Buffer): Promise<string[]> {
+async function extractPerPageTextViaPdfParse(pdfBytes: Buffer): Promise<string[]> {
   const pages: string[] = [];
   await pdfParse(pdfBytes, {
     pagerender: async (pageData: { getTextContent: (opts: unknown) => Promise<{ items: { str: string; transform: number[] }[] }> }) => {
@@ -97,6 +107,55 @@ async function extractPerPageText(pdfBytes: Buffer): Promise<string[]> {
     },
   });
   return pages;
+}
+
+/**
+ * Per-page text, extracted via the same direct pdf.js access
+ * (loadLegacyPdfjs) that detectChapterBoundariesFromOutline already uses,
+ * rather than pdf-parse's own `pagerender`-hook wrapper. Discovered
+ * necessary 2026-08-15 while building the Transformation task (the first
+ * thing that re-parses an already-split chunk's own bytes for text —
+ * previously chunks were only ever used as final downloadable/previewable
+ * PDFs): pdf-parse's JS wrapper (not the pdf.js it bundles) unreliably threw
+ * "bad XRef entry"/returned empty pages against pdf-lib-produced single/
+ * few-page PDFs, while driving the exact same vendored pdf.js build directly
+ * parsed the identical bytes correctly and consistently every time. Matches
+ * this codebase's existing suspicion that pdf-parse's wrapper — "its own
+ * hand-rolled pre-async/await promise shim" — is the flaky part, not the
+ * underlying parser.
+ */
+export async function extractPerPageText(pdfBytes: Buffer): Promise<string[]> {
+  const PDFJS = loadLegacyPdfjs();
+  if (!PDFJS) return extractPerPageTextViaPdfParse(pdfBytes);
+
+  PDFJS.disableWorker = true;
+  let doc: LegacyPdfDocumentProxy;
+  try {
+    doc = await PDFJS.getDocument(new Uint8Array(pdfBytes));
+  } catch {
+    return extractPerPageTextViaPdfParse(pdfBytes);
+  }
+  try {
+    const pages: string[] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const textContent = await page.getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false });
+      let lastY: number | undefined;
+      let text = '';
+      for (const item of textContent.items) {
+        if (lastY === item.transform[5] || lastY === undefined) {
+          text += item.str;
+        } else {
+          text += '\n' + item.str;
+        }
+        lastY = item.transform[5];
+      }
+      pages.push(text);
+    }
+    return pages;
+  } finally {
+    doc.destroy();
+  }
 }
 
 /**
@@ -122,9 +181,14 @@ interface LegacyOutlineItem {
   dest: unknown;
   items: LegacyOutlineItem[];
 }
+interface LegacyPdfPageProxy {
+  getTextContent(opts: unknown): Promise<{ items: { str: string; transform: number[] }[] }>;
+}
 interface LegacyPdfDocumentProxy {
+  numPages: number;
   getOutline(): Promise<LegacyOutlineItem[] | null>;
   getPageIndex(ref: unknown): Promise<number>;
+  getPage(pageNumber: number): Promise<LegacyPdfPageProxy>;
   destroy(): void;
 }
 interface LegacyPdfjsModule {

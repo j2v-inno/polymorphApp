@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+dist
+**/dist
+*.log
+.env
+.env.local
+backend/.env
+backend/payload.json
+.git

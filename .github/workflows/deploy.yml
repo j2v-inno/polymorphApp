@@ -1,0 +1,137 @@
+name: Deploy
+
+# Runs on the target environment's self-hosted runner (installed on the EC2
+# instance itself — same model as uw-fe/uw-be: the server only accepts inbound
+# connections from allowlisted IPs, so the runner connects outbound to GitHub
+# and executes the deploy locally).
+#
+# NOTE: no self-hosted runner exists yet for this repo (same situation as
+# uw-fe's own deploy.yml when it was first added). Until one is registered
+# with the `[self-hosted, dev]` labels, any run of this workflow will queue
+# indefinitely rather than fail — expected, not a bug. Use manual-deploy.sh in
+# the meantime (see README.md "Deployment"). ci.yml already calls this on
+# every push to dev, so deploys start firing the moment the runner comes
+# online with no further changes needed here.
+#
+# Deploys BOTH services (backend + frontend) — unlike uw-fe/uw-be (one service
+# per repo), transapp is one repo with two images from one ci.yml build job.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      image-tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: dev
+        type: choice
+        options: [dev]
+      image-tag:
+        description: "Image tag to deploy (e.g. sha-<full-commit-sha>, or dev)"
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, "${{ inputs.environment }}"]
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.APP_URL }}
+    env:
+      IMAGE_TAG: ${{ inputs.image-tag }}
+      DEPLOY_ENV: ${{ inputs.environment }}
+      FRONTEND_PORT: ${{ vars.FRONTEND_PORT }}
+      BACKEND_PORT: ${{ vars.BACKEND_PORT }}
+      BASE_PATH: ${{ vars.FRONTEND_BASE_PATH }}
+      ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
+      UWBE_BASE_URL: ${{ vars.UWBE_BASE_URL }}
+      UWBE_API_TOKEN: ${{ secrets.UWBE_API_TOKEN }}
+      # GITHUB_TOKEN can pull the package because it was published by this
+      # repo's Actions (auto-linked). No service-account PAT required; for
+      # manual pulls on the VM outside CI, use a personal PAT (read:packages) —
+      # note the org enforces SAML SSO, so a classic PAT must be separately
+      # authorized for this org before it can pull.
+      GHCR_USER: ${{ github.actor }}
+      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync deploy compose file
+        run: |
+          mkdir -p "/opt/transapp/${DEPLOY_ENV}"
+          cp docker-compose.deploy.yml "/opt/transapp/${DEPLOY_ENV}/"
+
+      - name: Deploy
+        run: |
+          set -euo pipefail
+          cd "/opt/transapp/${DEPLOY_ENV}"
+          COMPOSE="docker compose -f docker-compose.deploy.yml"
+
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+          # Pin every value so a manual `docker compose up` later reproduces
+          # this exact deploy.
+          cat > .env <<EOF
+          IMAGE_TAG=${IMAGE_TAG}
+          DEPLOY_ENV=${DEPLOY_ENV}
+          FRONTEND_PORT=${FRONTEND_PORT}
+          BACKEND_PORT=${BACKEND_PORT}
+          BASE_PATH=${BASE_PATH}
+          ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+          UWBE_BASE_URL=${UWBE_BASE_URL}
+          UWBE_API_TOKEN=${UWBE_API_TOKEN}
+          EOF
+
+          $COMPOSE pull
+          $COMPOSE up -d --remove-orphans
+
+          echo "Waiting for backend health check..."
+          ok=0
+          for i in $(seq 1 12); do
+            if curl -fsS "http://localhost:${BACKEND_PORT}/health" >/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 5
+          done
+          if [ "$ok" != "1" ]; then
+            echo "Backend health check FAILED"
+            $COMPOSE logs --tail=100 backend
+            exit 1
+          fi
+
+          echo "Waiting for frontend health check..."
+          ok=0
+          for i in $(seq 1 12); do
+            if curl -fsS "http://localhost:${FRONTEND_PORT}${BASE_PATH}/index.html" >/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 5
+          done
+          if [ "$ok" != "1" ]; then
+            echo "Frontend health check FAILED"
+            $COMPOSE logs --tail=100 frontend
+            exit 1
+          fi
+
+          docker image prune -f
+          docker logout ghcr.io
+
+          echo "Deployed ${IMAGE_TAG} to ${DEPLOY_ENV}"

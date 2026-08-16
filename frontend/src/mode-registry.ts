@@ -3,6 +3,7 @@ import type { TaskContext } from './types';
 import { AcquisitionScreen } from './modes/acquisition/AcquisitionScreen';
 import { QualificationScreen } from './modes/qualification/QualificationScreen';
 import { BatchSplitScreen } from './modes/batch-split/BatchSplitScreen';
+import { TransformationScreen } from './modes/transformation/TransformationScreen';
 import { DownloadScreen } from './modes/download/DownloadScreen';
 
 export interface ModeScreenProps {
@@ -28,5 +29,9 @@ export const modeRegistry: Record<string, ModeConfig> = {
     endpoints: ['get-task-ongoing-file', 'update-file-meta-data', 'update-file-status', 'flow-back-file-task'],
   },
   BATCH_SPLIT: { component: BatchSplitScreen, endpoints: ['update-file-status', 'register-file', 'get-all-tasks'] },
+  TRANSFORMATION: {
+    component: TransformationScreen,
+    endpoints: ['update-file-status', 'register-file', 'get-all-tasks'],
+  },
   DOWNLOAD: { component: DownloadScreen, endpoints: ['get-file-task-output'] },
 };

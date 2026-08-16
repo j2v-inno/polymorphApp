@@ -4,6 +4,7 @@ import { registerJobBatchFile, updateFileStatus } from '../uwbe-client/endpoints
 import { putRawBytes } from '../uwbe-client/http.js';
 import { checkTextExtractability } from '../pdf/text-extractable.js';
 import { config } from '../config.js';
+import { withUniqueSuffix } from '../lib/unique-filename.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 
@@ -17,14 +18,15 @@ acquisitionRouter.post('/register-and-upload', upload.single('file'), async (req
     return;
   }
 
-  const { projectCode, workflowCode, firstTaskUid, fileName, fileUniqueIdentifier } = req.body as Record<string, string>;
-  if (!projectCode || !workflowCode || !firstTaskUid || !fileName || !fileUniqueIdentifier) {
+  const { projectCode, workflowCode, firstTaskUid, fileName: rawFileName, fileUniqueIdentifier } = req.body as Record<string, string>;
+  if (!projectCode || !workflowCode || !firstTaskUid || !rawFileName || !fileUniqueIdentifier) {
     res.status(400).json({
       ok: false,
       error: 'projectCode, workflowCode, firstTaskUid, fileName, and fileUniqueIdentifier are required',
     });
     return;
   }
+  const fileName = withUniqueSuffix(rawFileName);
 
   // 1. Register
   const registerResult = await registerJobBatchFile({

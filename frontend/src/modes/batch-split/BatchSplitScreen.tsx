@@ -9,7 +9,7 @@ interface Props {
 const ROUTED_TO_LABEL: Record<BatchSplitChild['routedTo'], string> = {
   'manual-fix': 'Manual fix',
   'download-ready': 'Download ready',
-  qualification: 'Qualification',
+  transformation: 'Transformation',
 };
 
 const DETECTION_METHOD_LABEL: Record<ChapterDetectionMethod, string> = {
@@ -23,7 +23,8 @@ const DETECTION_METHOD_LABEL: Record<ChapterDetectionMethod, string> = {
  * equal-pages (original §6.3 behavior — 2-5 roughly-equal-page-count children,
  * routed by whether they touch flagged pages) or by-chapter (detects chapter
  * headings and produces one file per chapter, each routed to its own
- * qualification task since qualification hasn't run on these chapters yet).
+ * Transformation task — PDF text -> XML/JSON — since qualification reviews
+ * the transformed output, not these chapters' raw PDFs).
  */
 export function BatchSplitScreen({ taskContext }: Props) {
   // Pre-filled from the launch context when available (real uw-fe launch
@@ -63,7 +64,7 @@ export function BatchSplitScreen({ taskContext }: Props) {
       <p>
         Completes the parent file (file {taskContext.fileId}) and splits it either into 2-5 roughly-equal-page-count
         files (routing chunks that touch flagged pages to a manual-fix task, §6.3.1) or into one file per detected
-        chapter, each routed to its own qualification task.
+        chapter, each routed to its own Transformation task (PDF text → XML/JSON, reviewed in qualification after).
       </p>
 
       <label className="fluid-field">

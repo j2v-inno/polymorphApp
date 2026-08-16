@@ -1,0 +1,153 @@
+name: CI
+
+# Mirrors uw-fe's/uw-be's ci.yml shape (checks on every PR, then build+push+
+# deploy once a PR lands on dev), scaled down to what this repo actually has:
+# no lint/audit/test tooling exists here yet (see README), so this only runs
+# typecheck + a secret scan + a compile check before building both images.
+# Two images (frontend, backend) instead of one, since transapp is a single
+# repo with both.
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+  compile:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+  gitleaks:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.28.0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz gitleaks
+
+      - name: Scan PR commits
+        if: github.event_name == 'pull_request'
+        run: |
+          ./gitleaks git \
+            --log-opts="--no-merges ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" \
+            --redact --verbose --exit-code 1
+
+      - name: Scan working tree
+        if: github.event_name == 'push'
+        run: ./gitleaks dir . --redact --verbose --exit-code 1
+
+  build:
+    name: Build & push images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    needs: [typecheck, compile, gitleaks]
+    runs-on: ubuntu-latest
+    # Bakes this environment's BACKEND_URL/BASE_PATH into the frontend image at
+    # build time (webpack.DefinePlugin — frontend.md-equivalent note in
+    # frontend/Dockerfile) — same constraint as uw-fe's NEXT_PUBLIC_* values,
+    # so this image is only valid for the `dev` environment.
+    environment: dev
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/innodata-platform-engineering/transapp-backend:dev
+            ghcr.io/innodata-platform-engineering/transapp-backend:sha-${{ github.sha }}
+          cache-from: type=gha,scope=transapp-backend
+          cache-to: type=gha,mode=max,scope=transapp-backend
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          build-args: |
+            BACKEND_URL=${{ vars.BACKEND_URL }}
+            BASE_PATH=${{ vars.FRONTEND_BASE_PATH }}
+          tags: |
+            ghcr.io/innodata-platform-engineering/transapp-frontend:dev
+            ghcr.io/innodata-platform-engineering/transapp-frontend:sha-${{ github.sha }}
+          cache-from: type=gha,scope=transapp-frontend
+          cache-to: type=gha,mode=max,scope=transapp-frontend
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+  deploy-dev:
+    name: Deploy to dev
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    needs: build
+    # The called workflow needs packages: read for the GHCR pull; a reusable
+    # workflow's token can never exceed the caller job's permissions.
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: dev
+      image-tag: sha-${{ github.sha }}
+    secrets: inherit

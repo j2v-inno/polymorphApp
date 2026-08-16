@@ -7,6 +7,7 @@ import { acquisitionRouter } from './routes/acquisition.js';
 import { batchSplitRouter } from './routes/batch-split.js';
 import { downloadRouter } from './routes/download.js';
 import { qualificationRouter } from './routes/qualification.js';
+import { transformationRouter } from './routes/transformation.js';
 import { taskContextRouter } from './routes/task-context.js';
 
 export function createApp() {
@@ -27,6 +28,7 @@ export function createApp() {
   app.use('/api/acquisition', acquisitionRouter);
   app.use('/api/qualification', qualificationRouter);
   app.use('/api/batch', batchSplitRouter);
+  app.use('/api/transformation', transformationRouter);
   app.use('/api/download', downloadRouter);
 
   app.use(errorHandler);

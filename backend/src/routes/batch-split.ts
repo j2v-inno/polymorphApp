@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { splitPdf, type SplitMethod } from '../pdf/split.js';
 import { getAllTasks, registerFile, resolveActiveFile, updateFileStatus, type TaskGraphNode } from '../uwbe-client/endpoints.js';
 import { putRawBytes } from '../uwbe-client/http.js';
+import { withUniqueSuffix } from '../lib/unique-filename.js';
 
 export const batchSplitRouter = Router();
 
@@ -102,15 +103,17 @@ batchSplitRouter.post('/split', async (req, res) => {
   // Resolve target tasks dynamically (§6.3.1) — never hardcode a task_uid.
   const downloadReadyTaskUid = findTaskUid(taskGraph.data, config.batchSplit.downloadReadyTaskCode);
   const manualFixTaskUid = findTaskUid(taskGraph.data, config.batchSplit.manualFixTaskCode);
-  const qualificationTaskUid = findTaskUid(taskGraph.data, config.batchSplit.qualificationTaskCode);
+  const transformTaskUid = findTaskUid(taskGraph.data, config.batchSplit.transformTaskCode);
 
   // by-chapter has no pages_with_errors yet (qualification hasn't run on these
-  // chapters — that happens AFTER this split, per-chapter), so every chunk
-  // routes to qualification instead of the equal-pages download/manual-fix split.
-  if (splitMethod === 'by-chapter' && !qualificationTaskUid) {
+  // chapters — that happens AFTER transformation, per-chapter), so every chunk
+  // routes to the Transformation task (PDF text -> XML/JSON) instead of the
+  // equal-pages download/manual-fix split. Transformation's own completion is
+  // what routes each chapter onward to qualification (routes/transformation.ts).
+  if (splitMethod === 'by-chapter' && !transformTaskUid) {
     res.status(502).json({
       ok: false,
-      error: `no task with code "${config.batchSplit.qualificationTaskCode}" found in the workflow graph`,
+      error: `no task with code "${config.batchSplit.transformTaskCode}" found in the workflow graph`,
     });
     return;
   }
@@ -129,8 +132,8 @@ batchSplitRouter.post('/split', async (req, res) => {
     let targetTaskUid: string;
     let routedTo: string;
     if (splitMethod === 'by-chapter' && !usedFallback) {
-      targetTaskUid = qualificationTaskUid!;
-      routedTo = 'qualification';
+      targetTaskUid = transformTaskUid!;
+      routedTo = 'transformation';
     } else {
       const hasErrors = chunk.pageNumbers.some((p) => pagesWithErrors.has(p));
       // Intentional deviation from DAG-only routing — flagged to Vibhor per §6.3.1.
@@ -138,9 +141,11 @@ batchSplitRouter.post('/split', async (req, res) => {
       routedTo = hasErrors ? 'manual-fix' : 'download-ready';
     }
 
-    const fileName = chunk.label
-      ? `${chunk.label.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '')}.pdf`
-      : `${body.fileName.replace(/\.pdf$/i, '')}-part-${chunk.index + 1}.pdf`;
+    const fileName = withUniqueSuffix(
+      chunk.label
+        ? `${chunk.label.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '')}.pdf`
+        : `${body.fileName.replace(/\.pdf$/i, '')}-part-${chunk.index + 1}.pdf`,
+    );
 
     const registered = await registerFile({
       projectCode: body.projectCode,
@@ -153,6 +158,7 @@ batchSplitRouter.post('/split', async (req, res) => {
         split_index: chunk.index,
         ...(chunk.label ? { chapter_title: chunk.label } : {}),
       },
+      userId: body.userId,
     });
     if (!registered.ok || !registered.data) {
       res.status(502).json({ ok: false, error: registered.error ?? `register-file failed for chunk ${chunk.index}` });
@@ -166,6 +172,48 @@ batchSplitRouter.post('/split', async (req, res) => {
       return;
     }
     await putRawBytes(registered.data.file_output_upload_url, chunk.bytes);
+
+    // register-file's start_task:true is only needed to get file_output_upload_url
+    // back in the same call (see registerFile's own doc comment) — it also
+    // auto-claims the child as InProgress under whoever ran the split. A
+    // different team typically owns the target task than the one running
+    // batching, so release the claim right after uploading: this child should
+    // surface through that task's own unclaimed queue / "Start next file" like
+    // any other file, not be silently pre-owned. uw-be's own status machine
+    // only allows YetToStart from OnHold (never directly from InProgress), so
+    // this is a genuine two-hop release, not a single call.
+    const releaseToHold = await updateFileStatus({
+      projectCode: body.projectCode,
+      taskUid: targetTaskUid,
+      fileId: registered.data.file_id,
+      previousFileStatus: 'I',
+      fileStatus: 'O',
+      onholdReason: 'Released from auto-claim after batch-split — queued for assignment.',
+      userId: body.userId,
+    });
+    if (!releaseToHold.ok) {
+      res.status(502).json({
+        ok: false,
+        error: releaseToHold.error ?? `failed to release chunk ${chunk.index} to on-hold`,
+      });
+      return;
+    }
+    const releaseToQueue = await updateFileStatus({
+      projectCode: body.projectCode,
+      taskUid: targetTaskUid,
+      fileId: registered.data.file_id,
+      previousFileStatus: 'O',
+      fileStatus: 'Y',
+      userId: body.userId,
+    });
+    if (!releaseToQueue.ok) {
+      res.status(502).json({
+        ok: false,
+        error: releaseToQueue.error ?? `failed to release chunk ${chunk.index} to the unclaimed queue`,
+      });
+      return;
+    }
+
     children.push({
       fileId: registered.data.file_id,
       // register-file's response has no task_uid — the file now sits at

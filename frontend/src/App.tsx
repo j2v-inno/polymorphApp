@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { clearApiToken, revalidateTaskContext, setApiToken } from './api-client';
 import { modeRegistry } from './mode-registry';
+import { resolveModeFromPath } from './mode-path';
 import { resolveTaskContextPointer } from './task-context';
 import { AppShell } from './components/AppShell';
 import type { CustomProps, TaskContext } from './types';
@@ -60,18 +61,24 @@ export default function App(props: CustomProps) {
     );
   }
 
-  const mode = modeRegistry[state.taskContext.taskCode ?? ''];
+  // Standalone launches (new-tab, localhost:9100/<mode-path>?...) carry the mode
+  // in the URL path itself, set once per task in uw-be's external_app_integration
+  // config — immune to task renames and to any resolution hiccup upstream of
+  // taskCode. Parcel/single-spa mounts have no meaningful standalone path, so
+  // those fall back to the resolved taskCode as before.
+  const modeKey = resolveModeFromPath() ?? state.taskContext.taskCode ?? '';
+  const mode = modeRegistry[modeKey];
   if (!mode) {
     return (
       <AppShell taskContext={state.taskContext}>
-        <div className="fluid-alert fluid-alert--error">Unknown task_code: "{state.taskContext.taskCode}"</div>
+        <div className="fluid-alert fluid-alert--error">Unknown mode: "{modeKey}"</div>
       </AppShell>
     );
   }
 
   const ModeComponent = mode.component;
   return (
-    <AppShell activeMode={state.taskContext.taskCode} taskContext={state.taskContext}>
+    <AppShell activeMode={modeKey} taskContext={state.taskContext}>
       <ModeComponent taskContext={state.taskContext} />
     </AppShell>
   );

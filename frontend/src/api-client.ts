@@ -169,6 +169,19 @@ export function completeQualification(
   });
 }
 
+/**
+ * Fetches the raw text of a file's own input_download_url via the backend
+ * (avoids the browser hitting CORS on the presigned S3/MinIO URL directly).
+ * Used for the structured-content viewer when meta_data.content_format is
+ * 'xml'|'json' instead of the PDF iframe.
+ */
+export function fetchQualificationContent(url: string): Promise<BackendResult<{ content: string }>> {
+  return callBackend<{ content: string }>('/api/qualification/content-proxy', {
+    method: 'GET',
+    query: { url },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // §6.3 /batch
 // ---------------------------------------------------------------------------
@@ -181,7 +194,7 @@ export interface BatchSplitChild {
   taskUid: string;
   splitIndex: number;
   pageNumbers: number[];
-  routedTo: 'manual-fix' | 'download-ready' | 'qualification';
+  routedTo: 'manual-fix' | 'download-ready' | 'transformation';
   label?: string;
 }
 
@@ -217,6 +230,42 @@ export function splitBatch(
 }
 
 // ---------------------------------------------------------------------------
+// /transformation — new task, not in FLUID_APP_DEV_CONTEXT.md's original §6
+// (see README.md's "Transformation" section for the deliberate scope change)
+// ---------------------------------------------------------------------------
+
+export type TransformFormat = 'xml' | 'json';
+
+export interface TransformResult {
+  fileId: number;
+  taskUid: string;
+  format: TransformFormat;
+  pageCount: number;
+}
+
+export function transformFile(
+  taskContext: TaskContext,
+  workflowCode: string,
+  format: TransformFormat,
+): Promise<BackendResult<TransformResult>> {
+  return callBackend('/api/transformation/transform', {
+    method: 'POST',
+    body: {
+      projectId: taskContext.projectId,
+      projectCode: taskContext.projectCode,
+      workflowCode,
+      taskId: taskContext.taskId,
+      jobId: taskContext.jobId,
+      batchId: taskContext.batchId,
+      fileId: taskContext.fileId,
+      fileName: taskContext.fileName ?? `file-${taskContext.fileId}.pdf`,
+      format,
+      userId: taskContext.userId,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // §6.4 /download
 // ---------------------------------------------------------------------------
 
@@ -237,11 +286,10 @@ export function getDownloadLinks(
   return callBackend('/api/download', {
     method: 'GET',
     query: {
+      projectId: taskContext.projectId,
       projectCode: taskContext.projectCode,
       workflowCode,
       taskId: taskContext.taskId,
-      jobName: taskContext.jobName ?? '',
-      batchName: taskContext.batchName ?? '',
       fileIds: fileIds.join(','),
     },
   });

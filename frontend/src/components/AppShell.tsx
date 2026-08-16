@@ -1,10 +1,14 @@
 import type { ReactNode } from 'react';
 import type { TaskContext } from '../types';
 
+// Fixed visual order — doesn't perfectly track the by-chapter flow's real
+// order (register -> batch -> transform -> qualify -> download), same
+// accepted mismatch as Qualification/Batch split already have there.
 const STEPS: { key: string; label: string }[] = [
   { key: 'ACQUISITION', label: 'Acquisition' },
   { key: 'QUALIFICATION', label: 'Qualification' },
   { key: 'BATCH_SPLIT', label: 'Batch split' },
+  { key: 'TRANSFORMATION', label: 'Transformation' },
   { key: 'DOWNLOAD', label: 'Download' },
 ];
 

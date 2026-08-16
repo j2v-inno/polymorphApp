@@ -518,7 +518,7 @@ p.fluid-warning {
   color: var(--fl-warning);
 }
 
-.fluid-badge--qualification {
+.fluid-badge--transformation {
   background: var(--fl-primary-soft);
   color: var(--fl-primary);
 }
@@ -622,6 +622,21 @@ p.fluid-warning {
   border-radius: var(--fl-radius-md);
   margin-bottom: 16px;
   background: var(--fl-bg);
+}
+
+.fluid-content-viewer {
+  width: 100%;
+  max-height: 520px;
+  overflow: auto;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .fluid-metadata-editor {

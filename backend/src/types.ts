@@ -1,4 +1,4 @@
-export type ModeKey = 'ACQUISITION' | 'QUALIFICATION' | 'BATCH_SPLIT' | 'DOWNLOAD';
+export type ModeKey = 'ACQUISITION' | 'QUALIFICATION' | 'BATCH_SPLIT' | 'TRANSFORMATION' | 'DOWNLOAD';
 
 /**
  * Resolved task context — the shape both mount paths (Parcel customProps,
