@@ -82,7 +82,7 @@ jobs:
 
   build:
     name: Build & push images
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [typecheck, compile, gitleaks]
     runs-on: ubuntu-latest
     # Bakes this environment's BACKEND_URL/BASE_PATH into the frontend image at
