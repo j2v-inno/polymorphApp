@@ -37,13 +37,13 @@ done
 
 case "$APP" in
   fe)
-    GHCR_IMAGE="ghcr.io/innodata-platform-engineering/transapp-frontend"
+    GHCR_IMAGE="ghcr.io/j2v-inno/transapp-frontend"
     SERVICE="frontend"
     PORT="${PORT:-9100}"
     HEALTH_PATH="${BASE_PATH:-/ext/app/wa}/index.html"
     ;;
   be)
-    GHCR_IMAGE="ghcr.io/innodata-platform-engineering/transapp-backend"
+    GHCR_IMAGE="ghcr.io/j2v-inno/transapp-backend"
     SERVICE="backend"
     PORT="${PORT:-4100}"
     HEALTH_PATH="/health"

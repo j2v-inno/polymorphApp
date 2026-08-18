@@ -14,7 +14,7 @@ name: transapp-${DEPLOY_ENV:-dev}
 
 services:
   backend:
-    image: ghcr.io/innodata-platform-engineering/transapp-backend:${IMAGE_TAG:?IMAGE_TAG not set}
+    image: ghcr.io/j2v-inno/transapp-backend:${IMAGE_TAG:?IMAGE_TAG not set}
     container_name: transapp-backend-${DEPLOY_ENV:-dev}
     ports:
       - "${BACKEND_PORT:-4100}:4100"
@@ -48,7 +48,7 @@ services:
       start_period: 15s
 
   frontend:
-    image: ghcr.io/innodata-platform-engineering/transapp-frontend:${IMAGE_TAG:?IMAGE_TAG not set}
+    image: ghcr.io/j2v-inno/transapp-frontend:${IMAGE_TAG:?IMAGE_TAG not set}
     container_name: transapp-frontend-${DEPLOY_ENV:-dev}
     ports:
       - "${FRONTEND_PORT:-9100}:80"
