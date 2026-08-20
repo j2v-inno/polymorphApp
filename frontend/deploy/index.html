@@ -24,7 +24,7 @@
   </head>
   <body>
     <div id="app"></div>
-    <script type="importmap-injector">
+    <script type="importmap">
       {
         "imports": {
           "single-spa": "https://cdn.jsdelivr.net/npm/single-spa/lib/esm/single-spa.dev.js",
@@ -32,9 +32,7 @@
         }
       }
     </script>
-    <meta name="importmap-type" content="importmap-injector" />
-    <script src="https://cdn.jsdelivr.net/npm/@single-spa/import-map-injector"></script>
-    <script>
+    <script type="module">
       import('single-spa').then(function (singleSpa) {
         singleSpa.registerApplication({
           name: 'transapp',
