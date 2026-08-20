@@ -35,7 +35,7 @@ RUN pnpm --filter transapp-frontend build
 # its own subpath. Nesting the build output under that same subpath inside
 # the image means plain nginx defaults serve it correctly with zero custom
 # location config, matching how requests arrive unstripped from the host
-# nginx (see nginx/rnd-fe-unifiedworkflow.snippet.conf).
+# nginx (see nginx/rnd-orion.snippet.conf).
 FROM nginx:alpine AS runner
 
 ARG BASE_PATH=/ext/app/wa

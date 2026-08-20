@@ -262,7 +262,7 @@ has (no lint/audit/test tooling exists here yet, so CI is just typecheck +
 gitleaks + a compile check) and to two images instead of one, since transapp is
 a single repo with both a frontend and a backend.
 
-**Target**: `https://rnd-fe-unifiedworkflow.innodata.com`, under two new
+**Target**: `https://rnd-orion.innodata.com`, under two new
 subpaths on the *same* domain/box uw-fe already runs on — `/ext/app/wa`
 (frontend) and `/ext/app/api` (backend). Not a new domain, not a new server.
 
@@ -276,7 +276,7 @@ subpaths on the *same* domain/box uw-fe already runs on — `/ext/app/wa`
 | `manual-deploy.sh` | Same role as uw-fe/uw-be's own script — pull + retag + recreate + health-check — adapted for transapp's two services in one compose file (`--app fe\|be`). |
 | `.github/workflows/ci.yml` | typecheck → gitleaks → compile, then (on push to `dev`) build+push both images, then calls `deploy.yml`. |
 | `.github/workflows/deploy.yml` | Self-hosted-runner job; queues indefinitely until a `[self-hosted, dev]` runner is registered for *this* repo (same situation uw-fe's deploy.yml was in when first added) — use `manual-deploy.sh` until then. |
-| `nginx/rnd-fe-unifiedworkflow.snippet.conf` | Two `location` blocks to splice into the box's existing hand-maintained nginx config for this domain (confirmed: one file, no `conf.d/*.conf` include convention — can't be a drop-in). |
+| `nginx/rnd-orion.snippet.conf` | Two `location` blocks to splice into the box's existing hand-maintained nginx config for this domain (confirmed: one file, no `conf.d/*.conf` include convention — can't be a drop-in). |
 
 ### Why not the standalone plugin's own HTML
 
@@ -307,10 +307,10 @@ convention than the frontend's. Both are intentional, not an inconsistency.
 ### Manual steps still needed (not something this session could do)
 
 - **Push this repo to GitHub** (blocked on SSH auth per [[project_transapp_ui_and_git_init]] — user pushes manually).
-- **GitHub `dev` environment — variables**: `BACKEND_URL` (`https://rnd-fe-unifiedworkflow.innodata.com/ext/app/api`), `FRONTEND_BASE_PATH` (`/ext/app/wa`), `FRONTEND_PORT` (`9100`), `BACKEND_PORT` (`4100`), `ALLOWED_ORIGINS` (`https://rnd-fe-unifiedworkflow.innodata.com`), `UWBE_BASE_URL` (real RND uw-be, e.g. `https://rnd-be-unifiedworkflow.innodata.com/api/`), `APP_URL` (`https://rnd-fe-unifiedworkflow.innodata.com/ext/app/wa/`, cosmetic — shown on the GH environment page).
+- **GitHub `dev` environment — variables**: `BACKEND_URL` (`https://rnd-orion.innodata.com/ext/app/api`), `FRONTEND_BASE_PATH` (`/ext/app/wa`), `FRONTEND_PORT` (`9100`), `BACKEND_PORT` (`4100`), `ALLOWED_ORIGINS` (`https://rnd-orion.innodata.com`), `UWBE_BASE_URL` (real RND uw-be, e.g. `https://rnd-be-orion.innodata.com/api/`), `APP_URL` (`https://rnd-orion.innodata.com/ext/app/wa/`, cosmetic — shown on the GH environment page).
 - **GitHub `dev` environment — secrets**: `UWBE_API_TOKEN` (a real Sanctum personal access token for that uw-be instance — same kind of credential the local `.env`'s `UWBE_API_TOKEN` holds, but scoped for RND).
 - **Register a self-hosted runner** for *this* repo on the RND box with `[self-hosted, dev]` labels (uw-be's runner is presumably repo-scoped too, not reusable across repos — confirm before assuming otherwise). Until then, `deploy.yml` will queue forever (expected) — run `manual-deploy.sh` by hand after each `ci.yml` build.
-- **Splice `nginx/rnd-fe-unifiedworkflow.snippet.conf`'s two `location` blocks** into the box's existing server block for this domain, then `nginx -t && systemctl reload nginx`.
+- **Splice `nginx/rnd-orion.snippet.conf`'s two `location` blocks** into the box's existing server block for this domain, then `nginx -t && systemctl reload nginx`.
 - **Not tested end-to-end**: this environment has no working Docker daemon (Docker Desktop's backend can't start — no nested virtualization), so none of `docker build`/`docker compose` could actually be run here. Everything above was written by close analysis of uw-fe's/uw-be's own working Dockerfiles/compose files/CI, not verified by executing it. Build both images on a real Docker host and smoke-test before pointing the real domain at them.
 
 ## Verification status

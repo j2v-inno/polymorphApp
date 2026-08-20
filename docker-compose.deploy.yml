@@ -6,8 +6,8 @@
 #
 # Both services are exposed on plain host ports; the actual public routing
 # (TLS termination, /ext/app/wa + /ext/app/api subpaths under
-# rnd-fe-unifiedworkflow.innodata.com) lives in the box's own hand-maintained
-# nginx config, spliced in from nginx/rnd-fe-unifiedworkflow.snippet.conf —
+# rnd-orion.innodata.com) lives in the box's own hand-maintained
+# nginx config, spliced in from nginx/rnd-orion.snippet.conf —
 # not managed by this compose file or by transapp itself.
 
 name: transapp-${DEPLOY_ENV:-dev}
@@ -22,7 +22,7 @@ services:
       PORT: 4100
       UWBE_BASE_URL: ${UWBE_BASE_URL:?UWBE_BASE_URL not set}
       UWBE_API_TOKEN: ${UWBE_API_TOKEN:?UWBE_API_TOKEN not set}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://rnd-fe-unifiedworkflow.innodata.com}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://rnd-orion.innodata.com}
       ACQUISITION_GATE_MODE: ${ACQUISITION_GATE_MODE:-flag}
       ACQUISITION_MIN_AVG_CHARS_PER_PAGE: ${ACQUISITION_MIN_AVG_CHARS_PER_PAGE:-20}
       BATCH_SPLIT_MIN_CHUNKS: ${BATCH_SPLIT_MIN_CHUNKS:-2}

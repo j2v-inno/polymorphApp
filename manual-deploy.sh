@@ -69,10 +69,13 @@ else
 fi
 
 # UWBE_BASE_URL/UWBE_API_TOKEN (backend) are required by docker-compose.deploy.yml
-# and must already be exported in this shell, or set in a .env file in this
-# directory that `docker compose` picks up automatically — not passed on the
-# command line here since UWBE_API_TOKEN is a real secret.
-sudo -E docker compose -f docker-compose.deploy.yml -p "$PROJECT" up -d --remove-orphans "$SERVICE"
+# even when deploying --app fe (compose interpolates the whole file before
+# filtering by service) — must already be exported in this shell, or set in
+# deploy.env in this directory. Deliberately NOT named .env: see
+# https://github.com/j2v-inno/workflow-platform-api PR #9 — a compose-
+# interpolation file named .env once collided with and overwrote a live app's
+# real .env on this same box's uw-be deployment.
+sudo -E docker compose -f docker-compose.deploy.yml --env-file deploy.env -p "$PROJECT" up -d --remove-orphans "$SERVICE"
 
 echo "Waiting for health check..."
 ok=0
@@ -86,7 +89,7 @@ done
 
 if [ "$ok" != "1" ]; then
   echo "Health check FAILED"
-  sudo -E docker compose -f docker-compose.deploy.yml -p "$PROJECT" logs --tail=100 "$SERVICE"
+  sudo -E docker compose -f docker-compose.deploy.yml --env-file deploy.env -p "$PROJECT" logs --tail=100 "$SERVICE"
   exit 1
 fi
 
