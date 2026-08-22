@@ -28,7 +28,16 @@ interface RequestOptions {
 }
 
 async function callBackend<T>(path: string, opts: RequestOptions = {}): Promise<BackendResult<T>> {
-  const url = new URL(path, BACKEND_URL);
+  // new URL(path, BACKEND_URL) is wrong whenever BACKEND_URL has its own path
+  // (e.g. deployed under /ext/app/api): a leading "/" on `path` makes the
+  // WHATWG URL parser treat it as absolute-from-origin, silently discarding
+  // BACKEND_URL's own path entirely (https://host/ext/app/api + /api/x
+  // resolves to https://host/api/x, not .../ext/app/api/api/x — the latter
+  // is what nginx's prefix-stripping proxy actually expects on the deployed
+  // path, matching the plain http://localhost:4100/api/x shape locally
+  // since there BACKEND_URL has no path to lose in the first place).
+  // Plain string concatenation avoids that resolution behavior entirely.
+  const url = new URL(BACKEND_URL.replace(/\/+$/, '') + path);
   if (opts.query) {
     for (const [key, value] of Object.entries(opts.query)) {
       if (value !== undefined) url.searchParams.set(key, String(value));
