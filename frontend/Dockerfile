@@ -33,14 +33,20 @@ RUN pnpm --filter transapp-frontend build
 # when it does run, hardcodes an absolute "/<bundle>" script src that breaks
 # under a subpath — deploy/index.html replaces it with a version that knows
 # its own subpath. Nesting the build output under that same subpath inside
-# the image means plain nginx defaults serve it correctly with zero custom
-# location config, matching how requests arrive unstripped from the host
-# nginx (see nginx/rnd-orion.snippet.conf).
+# the image means plain nginx defaults serve real files (the JS bundle,
+# index.html itself) correctly with zero custom config — but mode-path.ts's
+# client-side routes (/acquisition, /batch-split, etc., see uw-be's
+# external_app_integration URLs) aren't real files, so the default config's
+# root+index (no fallback) 404s on those. deploy/nginx.conf.template adds the
+# SPA fallback nginx:alpine doesn't have out of the box.
 FROM nginx:alpine AS runner
 
 ARG BASE_PATH=/ext/app/wa
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html${BASE_PATH}/
 COPY frontend/deploy/index.html /usr/share/nginx/html${BASE_PATH}/index.html
 RUN sed -i "s#BASE_PATH_PLACEHOLDER#${BASE_PATH}#g" /usr/share/nginx/html${BASE_PATH}/index.html
+
+COPY frontend/deploy/nginx.conf.template /etc/nginx/conf.d/default.conf
+RUN sed -i "s#BASE_PATH_PLACEHOLDER#${BASE_PATH}#g" /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

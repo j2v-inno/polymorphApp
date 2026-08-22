@@ -1,0 +1,22 @@
+# Overrides nginx:alpine's default /etc/nginx/conf.d/default.conf. The stock
+# config only does root+index — no fallback for a path that isn't a real
+# file — so any deep-link mode path (BASE_PATH_PLACEHOLDER/acquisition,
+# /batch-split, etc. — see mode-path.ts) 404s before index.html/single-spa
+# ever loads, since those are client-side routes, not real files on disk.
+#
+# BASE_PATH_PLACEHOLDER is replaced by the Dockerfile's build step (sed),
+# same convention as index.html.
+server {
+    listen 80;
+    server_name localhost;
+
+    location BASE_PATH_PLACEHOLDER/ {
+        root /usr/share/nginx/html;
+        try_files $uri $uri/ BASE_PATH_PLACEHOLDER/index.html;
+    }
+
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html {
+        root /usr/share/nginx/html;
+    }
+}
