@@ -15,6 +15,17 @@
   BASE_PATH_PLACEHOLDER is replaced by the Dockerfile's build step (sed) with
   the real deployed subpath (e.g. /ext/app/wa) — do not hand-edit a "resolved"
   copy of this file; edit this template and let the build substitute it.
+
+  BUNDLE_VERSION_PLACEHOLDER is likewise substituted with the image's build
+  version (the commit sha) and appended to the JS filename itself — not just
+  a cosmetic version tag. Without a version in the filename, every deploy
+  reuses the exact same URL (.../innodata-transapp.js), so a CDN/edge cache
+  sitting in front of the real domain (confirmed present on rnd-orion.
+  innodata.com) can keep serving an old cached copy indefinitely regardless
+  of how many times the origin is rebuilt — a real incident, not a
+  hypothetical. A version-suffixed filename is a genuinely new URL on every
+  build, which is always a cache miss no matter what TTL policy the CDN has,
+  without needing any access to invalidate it.
 -->
 <html lang="en">
   <head>
@@ -31,7 +42,7 @@
           "react": "https://esm.sh/react@19.2.8",
           "react-dom": "https://esm.sh/react-dom@19.2.8?external=react",
           "react-dom/client": "https://esm.sh/react-dom@19.2.8/client?external=react",
-          "transapp": "BASE_PATH_PLACEHOLDER/innodata-transapp.js"
+          "transapp": "BASE_PATH_PLACEHOLDER/innodata-transapp.BUNDLE_VERSION_PLACEHOLDER.js"
         }
       }
     </script>

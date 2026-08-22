@@ -128,6 +128,7 @@ jobs:
           build-args: |
             BACKEND_URL=${{ vars.BACKEND_URL }}
             BASE_PATH=${{ vars.FRONTEND_BASE_PATH }}
+            BUNDLE_VERSION=sha-${{ github.sha }}
           tags: |
             ghcr.io/j2v-inno/transapp-frontend:dev
             ghcr.io/j2v-inno/transapp-frontend:sha-${{ github.sha }}

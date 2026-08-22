@@ -15,6 +15,18 @@ server {
         try_files $uri $uri/ BASE_PATH_PLACEHOLDER/index.html;
     }
 
+    # index.html's own URL never changes between deploys (unlike the JS
+    # bundle, which now embeds its version in the filename — see Dockerfile),
+    # so it's the one thing a CDN/edge cache in front of the real domain could
+    # still serve stale indefinitely. Explicitly forbidding caching here is
+    # belt-and-suspenders — whether the CDN actually honors it depends on that
+    # distribution's own cache policy, which isn't visible/controllable from
+    # here.
+    location = BASE_PATH_PLACEHOLDER/index.html {
+        root /usr/share/nginx/html;
+        add_header Cache-Control "no-store, must-revalidate" always;
+    }
+
     error_page 500 502 503 504 /50x.html;
     location = /50x.html {
         root /usr/share/nginx/html;

@@ -42,9 +42,18 @@ RUN pnpm --filter transapp-frontend build
 FROM nginx:alpine AS runner
 
 ARG BASE_PATH=/ext/app/wa
+# Defaults to "dev" for a plain manual build with no --build-arg — still gives
+# a real cache-busting suffix, just not a meaningful one. CI/manual-deploy.sh
+# should always pass the actual image tag (sha-<commit>) here.
+ARG BUNDLE_VERSION=dev
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html${BASE_PATH}/
+# Rename the bundle to embed BUNDLE_VERSION in its own filename — see
+# deploy/index.html's comment: without this, every deploy reuses the exact
+# same URL, which a CDN in front of the real domain can keep serving stale
+# from cache indefinitely regardless of how many times origin is rebuilt.
+RUN mv /usr/share/nginx/html${BASE_PATH}/innodata-transapp.js /usr/share/nginx/html${BASE_PATH}/innodata-transapp.${BUNDLE_VERSION}.js
 COPY frontend/deploy/index.html /usr/share/nginx/html${BASE_PATH}/index.html
-RUN sed -i "s#BASE_PATH_PLACEHOLDER#${BASE_PATH}#g" /usr/share/nginx/html${BASE_PATH}/index.html
+RUN sed -i "s#BASE_PATH_PLACEHOLDER#${BASE_PATH}#g; s#BUNDLE_VERSION_PLACEHOLDER#${BUNDLE_VERSION}#g" /usr/share/nginx/html${BASE_PATH}/index.html
 
 COPY frontend/deploy/nginx.conf.template /etc/nginx/conf.d/default.conf
 RUN sed -i "s#BASE_PATH_PLACEHOLDER#${BASE_PATH}#g" /etc/nginx/conf.d/default.conf
