@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TaskContext } from '../../types';
-import { splitBatch, type BatchSplitChild, type ChapterDetectionMethod, type SplitMethod } from '../../api-client';
+import { splitBatch, getBatchSplitStatus, type BatchSplitChild, type ChapterDetectionMethod, type SplitMethod } from '../../api-client';
 
 interface Props {
   taskContext: TaskContext;
@@ -38,6 +38,20 @@ export function BatchSplitScreen({ taskContext }: Props) {
   const [children, setChildren] = useState<BatchSplitChild[]>([]);
   const [usedFallback, setUsedFallback] = useState(false);
   const [detectionMethod, setDetectionMethod] = useState<ChapterDetectionMethod | undefined>(undefined);
+  // Polled from the backend's own in-process progress (the same state a
+  // resumed /split call picks up from) — real status, not a guessed spinner.
+  const [progressPhase, setProgressPhase] = useState<string | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function stopPolling() {
+    if (pollIntervalRef.current !== null) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }
+
+  // §10 unmount hygiene — a poll landing after the component's gone would setState on nothing.
+  useEffect(() => stopPolling, []);
 
   async function handleSplit() {
     if (!workflowCode.trim()) {
@@ -46,15 +60,33 @@ export function BatchSplitScreen({ taskContext }: Props) {
     }
     setStatus('splitting');
     setError(null);
+    setProgressPhase('starting…');
+
+    stopPolling();
+    const fileId = taskContext.fileId;
+    if (fileId !== undefined) {
+      pollIntervalRef.current = setInterval(async () => {
+        const statusResult = await getBatchSplitStatus(fileId);
+        if (statusResult.ok && statusResult.data) {
+          const { phase, totalChunks, chunksReleased } = statusResult.data;
+          setProgressPhase(totalChunks > 0 ? `${phase} (${chunksReleased}/${totalChunks} chapters done)` : phase);
+        }
+      }, 1500);
+    }
+
     const result = await splitBatch(taskContext, workflowCode, splitMethod);
+    stopPolling();
+
     if (!result.ok || !result.data) {
       setStatus('error');
       setError(result.error ?? 'split failed');
+      setProgressPhase(null);
       return;
     }
     setChildren(result.data.children);
     setUsedFallback(result.data.usedFallback);
     setDetectionMethod(result.data.detectionMethod);
+    setProgressPhase(null);
     setStatus('done');
   }
 
@@ -102,6 +134,8 @@ export function BatchSplitScreen({ taskContext }: Props) {
           {status === 'splitting' ? 'Splitting…' : 'Split'}
         </button>
       </div>
+
+      {status === 'splitting' && progressPhase && <p className="fluid-alert fluid-alert--info">{progressPhase}</p>}
 
       {error && <p className="fluid-alert fluid-alert--error">{error}</p>}
 

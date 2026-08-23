@@ -238,6 +238,18 @@ export function splitBatch(
   });
 }
 
+export interface BatchSplitStatus {
+  phase: string;
+  totalChunks: number;
+  chunksReleased: number;
+  parentCompleted: boolean;
+}
+
+/** Polled while splitBatch's request is in flight — same in-process progress the backend resumes from on retry. */
+export function getBatchSplitStatus(fileId: number): Promise<BackendResult<BatchSplitStatus>> {
+  return callBackend(`/api/batch/split-status/${fileId}`);
+}
+
 // ---------------------------------------------------------------------------
 // /transformation — new task, not in FLUID_APP_DEV_CONTEXT.md's original §6
 // (see README.md's "Transformation" section for the deliberate scope change)

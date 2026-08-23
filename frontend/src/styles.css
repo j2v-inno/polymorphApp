@@ -468,6 +468,26 @@
   font-size: 0.72rem;
 }
 
+.fluid-alert--info {
+  background: var(--fl-primary-soft);
+  border-color: var(--fl-primary);
+  color: var(--fl-primary-dark);
+}
+
+.fluid-alert--info::before {
+  content: "i";
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border-radius: 999px;
+  background: var(--fl-primary);
+  color: #fff;
+  font-size: 0.72rem;
+  font-style: italic;
+}
+
 /* p elements using the legacy bare classNames (no .fluid-alert wrapper) still
    need the box treatment for existing markup that only sets one className. */
 p.fluid-error,
