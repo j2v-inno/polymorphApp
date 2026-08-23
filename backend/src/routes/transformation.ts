@@ -141,7 +141,12 @@ transformationRouter.post('/transform', async (req, res) => {
     });
     return;
   }
-  await putRawBytes(registered.data.file_output_upload_url, Buffer.from(serialized, 'utf-8'), contentType);
+  try {
+    await putRawBytes(registered.data.file_output_upload_url, Buffer.from(serialized, 'utf-8'), contentType);
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err instanceof Error ? err.message : 'upload failed' });
+    return;
+  }
 
   // Same two-hop release as batch-split.ts's children — don't pre-own this file
   // for whoever works qualification next; surface it through that task's own

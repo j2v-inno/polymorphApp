@@ -42,6 +42,13 @@ acquisitionRouter.post('/register-and-upload', upload.single('file'), async (req
     return;
   }
   const { file_id: fileId, file_output_upload_url: uploadUrl } = registerResult.data;
+  if (!uploadUrl) {
+    res.status(502).json({
+      ok: false,
+      error: 'register-job-batch-file returned no upload URL — check this task\'s upload_to_storage flag',
+    });
+    return;
+  }
   // The registration response doesn't return a task_uid — the file simply now
   // sits at whichever task you registered it against (verified: uw-be's
   // register-job-batch-file response has no task_uid field).
@@ -52,7 +59,12 @@ acquisitionRouter.post('/register-and-upload', upload.single('file'), async (req
 
   // 3. Upload regardless of gate outcome — a human still needs the file to review
   // it on the on-hold/flagged path.
-  await putRawBytes(uploadUrl, file.buffer, file.mimetype || 'application/pdf');
+  try {
+    await putRawBytes(uploadUrl, file.buffer, file.mimetype || 'application/pdf');
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err instanceof Error ? err.message : 'upload failed' });
+    return;
+  }
 
   // 4. Complete. Behavior on gate failure is an open blocker (§13 #1, owner: Bhanu:
   // reject vs. flag-and-continue). Config-driven so switching is one env var, not a
