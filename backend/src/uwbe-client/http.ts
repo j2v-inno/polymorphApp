@@ -38,7 +38,23 @@ export async function callUwbe<T>(endpoint: string, opts: CallOptions = {}): Pro
     body = JSON.stringify(opts.body);
   }
 
-  const response = await fetch(url, { method, headers, body });
+  let response: Response;
+  try {
+    response = await fetch(url, { method, headers, body });
+  } catch (err) {
+    // A thrown fetch (connection reset/refused/timeout, DNS failure) never
+    // reaches uw-be at all — confirmed via Telescope showing no request logged
+    // for calls that failed this way. Left uncaught, this used to bypass every
+    // caller's `!result.ok` retry logic entirely (Express 5 auto-forwards the
+    // rejection straight to the generic error handler, producing a bare,
+    // message-less 502) instead of being retried like a normal uw-be failure.
+    return {
+      ok: false,
+      data: null,
+      error: err instanceof Error ? `network error calling ${endpoint}: ${err.message}` : `network error calling ${endpoint}`,
+      httpStatus: 0,
+    };
+  }
 
   // §7 — some endpoints return plain-text (non-JSON) bodies on failure instead
   // of the documented envelope. Attempt-JSON-then-fallback rather than letting
