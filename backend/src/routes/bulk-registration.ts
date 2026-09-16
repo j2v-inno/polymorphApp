@@ -271,6 +271,7 @@ bulkRegistrationRouter.post('/start', async (req, res) => {
             filePath: row.fileName,
             fileUniqueIdentifier: `bulk-${body.firstTaskUid}-${row.rowIndex}-${Date.now()}`,
             metaData: row.metaData,
+            userId: body.userId,
           }),
         );
         if (!registered.ok || !registered.data || !registered.data.file_output_upload_url) {

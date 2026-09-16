@@ -21,6 +21,18 @@ export interface RegisterJobBatchFileParams {
   filePath: string;
   fileUniqueIdentifier: string;
   metaData?: Record<string, unknown>;
+  /**
+   * uw-be defaults this to 1 (system) when omitted (TaskProcessController.php:903,
+   * `$request->user_id ?? 1`) and that's who ends up "claiming" the file's
+   * file_task_users session. If a caller later completes this same file with
+   * an explicit different userId (see updateFileStatus's own userId doc
+   * comment), the completion UPDATE's `user_id = ?` guard won't match this
+   * session at all and uw-be throws the misleading "File is already
+   * updated." — confirmed live via bulk-registration.ts. Pass the same
+   * userId here that completion will use to keep the whole row's claiming
+   * session consistent, rather than leaving this defaulted to system.
+   */
+  userId?: number;
 }
 
 export interface RegisterJobBatchFileResult {
@@ -54,6 +66,7 @@ export function registerJobBatchFile(params: RegisterJobBatchFileParams): Promis
       // exist on TaskProcessController@register_job_batch_file (uw-be:829-847).
       unique_identifier: params.fileUniqueIdentifier,
       meta_data: params.metaData,
+      user_id: params.userId,
     },
   });
 }
