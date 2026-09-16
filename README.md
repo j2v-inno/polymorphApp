@@ -304,10 +304,39 @@ are hardcoded as `/api/...` with no reason to know about an external prefix —
 stripping means zero backend code changes, at the cost of being a different
 convention than the frontend's. Both are intentional, not an inconsistency.
 
+### Bypassing CloudFront/WAF for backend→uw-be calls
+
+`UWBE_BASE_URL` (real RND uw-be, `rnd-be-orion.innodata.com`) sits behind the same
+CloudFront distribution + WAF as `rnd-orion.innodata.com` — confirmed to enforce a
+request-body-size limit that blocks large PDF uploads/downloads outright (413,
+`SizeRestrictions_BODY`), the same issue that forced uw-be's own local testing onto
+a MinIO workaround. Since `transapp-backend` and uw-be both run on the *same* box
+(SVRSGPWEB27), there's no reason its server-to-server calls need to leave the box at
+all — `docker-compose.deploy.yml`'s `backend` service takes an `extra_hosts` entry
+(same same-box-hairpin mechanism uw-fe/uw-be's own compose files already use, there
+to work around hairpin-NAT) that, when set, resolves `UWBE_BASE_URL`'s hostname
+straight to the box's own nginx instead of round-tripping through CloudFront —
+bypassing the WAF guard entirely for these calls. No-op by default (`extra_hosts:
+unused.invalid:127.0.0.1`, an inert placeholder); set `EXTRA_HOST_ENTRY` (in
+`deploy.env` for `manual-deploy.sh`, or the GH `dev` environment's variables for
+`deploy.yml`) to `rnd-be-orion.innodata.com:host-gateway` to enable it — `nginx` on
+the box still routes by Host header/SNI exactly as it would for a real external
+request, so TLS and vhost matching both still work correctly.
+
+This is a deliberate, temporary workaround — it bypasses a security control (WAF)
+rather than fixing the underlying body-size rule, and it only helps
+`transapp-backend`'s own outbound calls, not the browser's direct calls to
+`transapp-backend` itself (those still go through `rnd-orion.innodata.com`'s own
+CloudFront path, which has its own separate open issues — see internal notes on
+that domain's CloudFront/WAF history). Revisit once there's AWS Console access to
+fix the WAF rule properly (raise or scope
+`SizeRestrictions_BODY`, or exempt this origin's Web ACL) instead of routing around it
+indefinitely.
+
 ### Manual steps still needed (not something this session could do)
 
 - **Push this repo to GitHub** (blocked on SSH auth per [[project_transapp_ui_and_git_init]] — user pushes manually).
-- **GitHub `dev` environment — variables**: `BACKEND_URL` (`https://rnd-orion.innodata.com/ext/app/api`), `FRONTEND_BASE_PATH` (`/ext/app/wa`), `FRONTEND_PORT` (`9100`), `BACKEND_PORT` (`4100`), `ALLOWED_ORIGINS` (`https://rnd-orion.innodata.com`), `UWBE_BASE_URL` (real RND uw-be, e.g. `https://rnd-be-orion.innodata.com/api/`), `APP_URL` (`https://rnd-orion.innodata.com/ext/app/wa/`, cosmetic — shown on the GH environment page).
+- **GitHub `dev` environment — variables**: `BACKEND_URL` (`https://rnd-orion.innodata.com/ext/app/api`), `FRONTEND_BASE_PATH` (`/ext/app/wa`), `FRONTEND_PORT` (`9100`), `BACKEND_PORT` (`4100`), `ALLOWED_ORIGINS` (`https://rnd-orion.innodata.com`), `UWBE_BASE_URL` (real RND uw-be, e.g. `https://rnd-be-orion.innodata.com/api/`), `APP_URL` (`https://rnd-orion.innodata.com/ext/app/wa/`, cosmetic — shown on the GH environment page), `EXTRA_HOST_ENTRY` (optional — see "Bypassing CloudFront/WAF for backend→uw-be calls" below).
 - **GitHub `dev` environment — secrets**: `UWBE_API_TOKEN` (a real Sanctum personal access token for that uw-be instance — same kind of credential the local `.env`'s `UWBE_API_TOKEN` holds, but scoped for RND).
 - **Register a self-hosted runner** for *this* repo on the RND box with `[self-hosted, dev]` labels (uw-be's runner is presumably repo-scoped too, not reusable across repos — confirm before assuming otherwise). Until then, `deploy.yml` will queue forever (expected) — run `manual-deploy.sh` by hand after each `ci.yml` build.
 - **Splice `nginx/rnd-orion.snippet.conf`'s two `location` blocks** into the box's existing server block for this domain, then `nginx -t && systemctl reload nginx`.

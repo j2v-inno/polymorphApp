@@ -75,6 +75,12 @@ fi
 # https://github.com/j2v-inno/workflow-platform-api PR #9 — a compose-
 # interpolation file named .env once collided with and overwrote a live app's
 # real .env on this same box's uw-be deployment.
+#
+# EXTRA_HOST_ENTRY (optional, same deploy.env) — set to e.g.
+# "rnd-be-orion.innodata.com:host-gateway" to hairpin the backend's
+# UWBE_BASE_URL calls straight to this box instead of out through
+# CloudFront/WAF. See README.md "Bypassing CloudFront/WAF for backend→uw-be
+# calls". No-op if unset.
 sudo -E docker compose -f docker-compose.deploy.yml --env-file deploy.env -p "$PROJECT" up -d --remove-orphans "$SERVICE"
 
 echo "Waiting for health check..."

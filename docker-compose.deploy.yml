@@ -18,6 +18,17 @@ services:
     container_name: transapp-backend-${DEPLOY_ENV:-dev}
     ports:
       - "${BACKEND_PORT:-4100}:4100"
+    # Hairpins UWBE_BASE_URL's hostname straight to the box itself (same
+    # same-box-hairpin fix uw-fe/uw-be already use — see their own
+    # docker-compose.yml EXTRA_HOST_ENTRY) instead of round-tripping out to
+    # CloudFront and back in. Doubles as a deliberate, temporary bypass of the
+    # CloudFront/WAF body-size limit that blocks large PDF uploads/downloads
+    # through rnd-be-orion.innodata.com (see uw-be's own S3/MinIO saga for the
+    # same underlying WAF issue). No-op default; set EXTRA_HOST_ENTRY in
+    # deploy.env / the GH environment to something like
+    # "rnd-be-orion.innodata.com:host-gateway" to actually enable it.
+    extra_hosts:
+      - ${EXTRA_HOST_ENTRY:-unused.invalid:127.0.0.1}
     environment:
       PORT: 4100
       UWBE_BASE_URL: ${UWBE_BASE_URL:?UWBE_BASE_URL not set}

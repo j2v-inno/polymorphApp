@@ -62,6 +62,7 @@ jobs:
       ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
       UWBE_BASE_URL: ${{ vars.UWBE_BASE_URL }}
       UWBE_API_TOKEN: ${{ secrets.UWBE_API_TOKEN }}
+      EXTRA_HOST_ENTRY: ${{ vars.EXTRA_HOST_ENTRY }}
       # GITHUB_TOKEN can pull the package because it was published by this
       # repo's Actions (auto-linked). No service-account PAT required; for
       # manual pulls on the VM outside CI, use a personal PAT (read:packages) —
@@ -96,6 +97,7 @@ jobs:
           ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
           UWBE_BASE_URL=${UWBE_BASE_URL}
           UWBE_API_TOKEN=${UWBE_API_TOKEN}
+          EXTRA_HOST_ENTRY=${EXTRA_HOST_ENTRY}
           EOF
 
           $COMPOSE pull
