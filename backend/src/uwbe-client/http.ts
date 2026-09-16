@@ -95,6 +95,11 @@ export async function putRawBytes(uploadUrl: string, bytes: Buffer, contentType 
     body: bytes,
   });
   if (!response.ok) {
-    throw new Error(`upload to ${uploadUrl} failed: HTTP ${response.status}`);
+    // S3/MinIO's actual XML error body (e.g. SignatureDoesNotMatch vs.
+    // AccessDenied vs. something else entirely) is far more useful than the
+    // bare status code alone — include it so a failure is diagnosable from
+    // the row's own error field instead of needing server-side log access.
+    const body = await response.text().catch(() => '');
+    throw new Error(`upload to ${uploadUrl} failed: HTTP ${response.status}${body ? ` — ${body}` : ''}`);
   }
 }
