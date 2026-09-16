@@ -118,6 +118,11 @@ export function parseBulkRegistrationSheet(file: File): Promise<BackendResult<Pa
   return callBackend<ParsedSheet>('/api/bulk-registration/parse', { method: 'POST', formData });
 }
 
+/** Distinct values a column actually takes across the sheet — backs the routing-rule picker (one input per real value, not free text, to avoid typos against a large sheet). */
+export function getBulkRegistrationColumnValues(sheetId: string, column: string): Promise<BackendResult<{ values: string[] }>> {
+  return callBackend(`/api/bulk-registration/${sheetId}/column-values`, { method: 'GET', query: { column } });
+}
+
 export interface BulkRegistrationRowResult {
   rowIndex: number;
   fileName: string;
@@ -133,25 +138,35 @@ export interface BulkRegistrationResult {
   rows: BulkRegistrationRowResult[];
 }
 
+export interface StartBulkRegistrationOptions {
+  workflowCode: string;
+  sheetId: string;
+  fileNameColumn: string;
+  metadataColumns: string[];
+  /** Caps how many of the sheet's rows (in row order) get registered. Omit to process every row. */
+  limit?: number;
+  /** Which column's value picks a per-row completion target task (e.g. route Grad-level rows to one team's task, Undergrad to another). Omit for the original single-destination behavior. */
+  routingColumn?: string;
+  /** Column value -> target task_uid. Must cover every value routingColumn actually takes — the backend validates this upfront and rejects the whole run (before touching any row) if any value is unmapped. */
+  routingRules?: Record<string, string>;
+}
+
 export function startBulkRegistration(
   taskContext: TaskContext,
-  workflowCode: string,
-  sheetId: string,
-  fileNameColumn: string,
-  metadataColumns: string[],
-  /** Caps how many of the sheet's rows (in row order) get registered. Omit to process every row. */
-  limit?: number,
+  options: StartBulkRegistrationOptions,
 ): Promise<BackendResult<BulkRegistrationResult>> {
   return callBackend<BulkRegistrationResult>('/api/bulk-registration/start', {
     method: 'POST',
     body: {
       projectCode: taskContext.projectCode,
-      workflowCode,
+      workflowCode: options.workflowCode,
       firstTaskUid: taskContext.taskUid,
-      sheetId,
-      fileNameColumn,
-      metadataColumns,
-      limit,
+      sheetId: options.sheetId,
+      fileNameColumn: options.fileNameColumn,
+      metadataColumns: options.metadataColumns,
+      limit: options.limit,
+      routingColumn: options.routingColumn,
+      routingRules: options.routingRules,
       userId: taskContext.userId,
     },
   });

@@ -4,6 +4,7 @@ import {
   parseBulkRegistrationSheet,
   startBulkRegistration,
   getBulkRegistrationStatus,
+  getBulkRegistrationColumnValues,
   type ParsedSheet,
   type BulkRegistrationResult,
 } from '../../api-client';
@@ -35,6 +36,12 @@ export function BulkRegistrationScreen({ taskContext }: Props) {
   const [metadataColumns, setMetadataColumns] = useState<string[]>([]);
   /** String, not number, so the field can sit empty (= no limit, register every row) without fighting a numeric default. */
   const [limitInput, setLimitInput] = useState('');
+  /** '' = no routing — the original single-destination behavior (no next_task sent). */
+  const [routingColumn, setRoutingColumn] = useState('');
+  const [routingValues, setRoutingValues] = useState<string[]>([]);
+  const [routingValuesLoading, setRoutingValuesLoading] = useState(false);
+  /** Distinct column value -> target task_uid the operator typed in. Not validated client-side — the backend checks every value has a rule before touching any row and reports exactly which ones are missing. */
+  const [routingRuleInputs, setRoutingRuleInputs] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [progressPhase, setProgressPhase] = useState<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -59,11 +66,27 @@ export function BulkRegistrationScreen({ taskContext }: Props) {
     }
     setFileNameColumn(result.data.columns[0] ?? '');
     setMetadataColumns([]);
+    setRoutingColumn('');
+    setRoutingValues([]);
+    setRoutingRuleInputs({});
     setStatus({ kind: 'picking', sheet: result.data });
   }
 
   function toggleMetadataColumn(column: string) {
     setMetadataColumns((prev) => (prev.includes(column) ? prev.filter((c) => c !== column) : [...prev, column]));
+  }
+
+  async function handleRoutingColumnChange(column: string, sheetId: string) {
+    setRoutingColumn(column);
+    setRoutingRuleInputs({});
+    if (!column) {
+      setRoutingValues([]);
+      return;
+    }
+    setRoutingValuesLoading(true);
+    const result = await getBulkRegistrationColumnValues(sheetId, column);
+    setRoutingValuesLoading(false);
+    setRoutingValues(result.ok && result.data ? result.data.values : []);
   }
 
   async function handleStart() {
@@ -92,7 +115,15 @@ export function BulkRegistrationScreen({ taskContext }: Props) {
       }
     }, 1500);
 
-    const result = await startBulkRegistration(taskContext, workflowCode, sheet.sheetId, fileNameColumn, metadataColumns, limit);
+    const result = await startBulkRegistration(taskContext, {
+      workflowCode,
+      sheetId: sheet.sheetId,
+      fileNameColumn,
+      metadataColumns,
+      limit,
+      routingColumn: routingColumn || undefined,
+      routingRules: routingColumn ? routingRuleInputs : undefined,
+    });
     stopPolling();
     setProgressPhase(null);
 
@@ -198,6 +229,47 @@ export function BulkRegistrationScreen({ taskContext }: Props) {
               ))}
             </div>
           </div>
+
+          <label className="fluid-field">
+            Route by column (optional)
+            <select
+              value={routingColumn}
+              onChange={(event) => handleRoutingColumnChange(event.target.value, status.sheet.sheetId)}
+              disabled={isRunning}
+            >
+              <option value="">None — single destination for every row</option>
+              {status.sheet.columns.map((column) => (
+                <option key={column} value={column}>
+                  {column}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {routingColumn && (
+            <div className="fluid-field">
+              Target task per "{routingColumn}" value
+              {routingValuesLoading ? (
+                <p className="fluid-flag-summary">Loading distinct values…</p>
+              ) : (
+                <div className="fluid-metadata-editor">
+                  {routingValues.map((value) => (
+                    <div key={value} className="fluid-metadata-row">
+                      <input value={value} disabled readOnly />
+                      <input
+                        placeholder="Target task UID"
+                        value={routingRuleInputs[value] ?? ''}
+                        onChange={(event) =>
+                          setRoutingRuleInputs((prev) => ({ ...prev, [value]: event.target.value }))
+                        }
+                        disabled={isRunning}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="fluid-actions">
             <button

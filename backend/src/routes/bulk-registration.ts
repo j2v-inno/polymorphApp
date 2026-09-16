@@ -69,6 +69,22 @@ bulkRegistrationRouter.post('/parse', upload.single('file'), (req, res) => {
   res.json({ ok: true, data: { sheetId, columns, rowCount: rows.length } });
 });
 
+/** Distinct values for one column, for the routing-rule picker (one input per value, not free text — avoids typos against a 497-row sheet). */
+bulkRegistrationRouter.get('/:sheetId/column-values', (req, res) => {
+  const sheet = parsedSheets.get(req.params.sheetId);
+  if (!sheet) {
+    res.status(404).json({ ok: false, error: 'unknown sheetId — re-upload the spreadsheet' });
+    return;
+  }
+  const column = String(req.query.column ?? '');
+  if (!column || !sheet.columns.includes(column)) {
+    res.status(400).json({ ok: false, error: "column query param must name one of the sheet's own columns" });
+    return;
+  }
+  const values = Array.from(new Set(sheet.rows.map((row) => String(row[column] ?? '')))).sort();
+  res.json({ ok: true, data: { values } });
+});
+
 // ---------------------------------------------------------------------------
 // Step 2 — iterate every row: register, gate-check, upload, complete. Same
 // per-row flow as /acquisition (register-job-batch-file -> text-extractability
@@ -87,6 +103,10 @@ interface StartBody {
   metadataColumns?: string[];
   /** Optional cap on how many of the sheet's rows to register, in row order — a safety guard against accidentally kicking off a run against a much larger sheet than intended. Omit to process every row. */
   limit?: number;
+  /** Which column's value picks a per-row completion target task (e.g. "Level" → route Grad-level rows to the grad team's task, Undergrad to another). Omit for the original single-destination behavior (no `next_task` sent at all). */
+  routingColumn?: string;
+  /** Column value -> target task_uid. Must cover every value the routingColumn actually takes across the (limited) rows being registered — checked upfront, before any row is touched, not discovered mid-run. Re-checked on every /start call (including a resume), so missing rules can be filled in and retried without losing already-completed rows. */
+  routingRules?: Record<string, string>;
   userId?: number;
 }
 
@@ -94,6 +114,8 @@ interface PlannedRow {
   rowIndex: number;
   fileName: string;
   metaData: Record<string, string>;
+  /** The sheet's own row, kept for routing-rule lookups on any call (including a resume with newly-added rules) — not just the columns already baked into fileName/metaData at plan-build time. */
+  rawRow: Record<string, string>;
   registeredFileId?: number;
   taskUid?: string;
   uploadUrl?: string;
@@ -192,6 +214,7 @@ bulkRegistrationRouter.post('/start', async (req, res) => {
         rowIndex,
         fileName: resolveFileName(String(row[body.fileNameColumn] ?? ''), rowIndex),
         metaData: Object.fromEntries(metadataColumns.map((col) => [col, String(row[col] ?? '')])),
+        rawRow: row,
         uploaded: false,
         completed: false,
         failed: false,
@@ -200,6 +223,29 @@ bulkRegistrationRouter.post('/start', async (req, res) => {
     inFlightRuns.set(body.sheetId, run);
   } else {
     run.busy = true;
+  }
+
+  // Validate routing BEFORE touching any row — a 497-row run shouldn't burn
+  // through real uw-be registrations only to discover row 300's value has no
+  // rule. Re-checked on every call (including a resume) so newly-added rules
+  // are picked up without needing to rebuild the plan.
+  if (body.routingColumn) {
+    const rules = body.routingRules ?? {};
+    const missing = new Set<string>();
+    for (const row of run.plan) {
+      if (row.completed) continue;
+      const value = String(row.rawRow[body.routingColumn] ?? '');
+      if (!(value in rules)) missing.add(value);
+    }
+    if (missing.size > 0) {
+      run.busy = false;
+      res.status(400).json({
+        ok: false,
+        error: `No routing rule for ${missing.size} distinct value(s) of "${body.routingColumn}": ${Array.from(missing).join(', ')}`,
+        missingValues: Array.from(missing),
+      });
+      return;
+    }
   }
 
   try {
@@ -251,6 +297,10 @@ bulkRegistrationRouter.post('/start', async (req, res) => {
 
       if (!gate) gate = await checkTextExtractability(placeholderPdf);
 
+      // Already validated to exist above (whenever routingColumn is set) —
+      // never undefined here for a row that reached this point.
+      const nextTaskUid = body.routingColumn ? (body.routingRules ?? {})[String(row.rawRow[body.routingColumn] ?? '')] : undefined;
+
       run.phase = `completing ${rowLabel}`;
       // Same gate-outcome branching as acquisition.ts's step 4 — reject vs.
       // flag-and-continue is config.acquisitionGateMode (§13 #1, still unconfirmed).
@@ -262,6 +312,7 @@ bulkRegistrationRouter.post('/start', async (req, res) => {
               fileId: row.registeredFileId!,
               previousFileStatus: 'I',
               fileStatus: 'C',
+              nextTask: nextTaskUid,
               userId: body.userId,
             })
           : config.acquisitionGateMode === 'reject'
@@ -281,6 +332,7 @@ bulkRegistrationRouter.post('/start', async (req, res) => {
                 previousFileStatus: 'I',
                 fileStatus: 'C',
                 metaData: { acquisition_check: 'fail' },
+                nextTask: nextTaskUid,
                 userId: body.userId,
               }),
       );
