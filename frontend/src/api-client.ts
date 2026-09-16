@@ -99,6 +99,77 @@ export function registerAndUploadAcquisition(
 }
 
 // ---------------------------------------------------------------------------
+// /bulk-registration — another content-acquisition entry point, not in
+// FLUID_APP_DEV_CONTEXT.md's original §6. Takes a spreadsheet (one row per
+// file to register) instead of a single manual upload; every row gets the
+// same placeholder PDF, with a filename and metadata picked from the sheet's
+// own columns. See README.md's "Bulk registration" section.
+// ---------------------------------------------------------------------------
+
+export interface ParsedSheet {
+  sheetId: string;
+  columns: string[];
+  rowCount: number;
+}
+
+export function parseBulkRegistrationSheet(file: File): Promise<BackendResult<ParsedSheet>> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return callBackend<ParsedSheet>('/api/bulk-registration/parse', { method: 'POST', formData });
+}
+
+export interface BulkRegistrationRowResult {
+  rowIndex: number;
+  fileName: string;
+  fileId?: number;
+  ok: boolean;
+  error?: string;
+}
+
+export interface BulkRegistrationResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  rows: BulkRegistrationRowResult[];
+}
+
+export function startBulkRegistration(
+  taskContext: TaskContext,
+  workflowCode: string,
+  sheetId: string,
+  fileNameColumn: string,
+  metadataColumns: string[],
+  /** Caps how many of the sheet's rows (in row order) get registered. Omit to process every row. */
+  limit?: number,
+): Promise<BackendResult<BulkRegistrationResult>> {
+  return callBackend<BulkRegistrationResult>('/api/bulk-registration/start', {
+    method: 'POST',
+    body: {
+      projectCode: taskContext.projectCode,
+      workflowCode,
+      firstTaskUid: taskContext.taskUid,
+      sheetId,
+      fileNameColumn,
+      metadataColumns,
+      limit,
+      userId: taskContext.userId,
+    },
+  });
+}
+
+export interface BulkRegistrationStatus {
+  phase: string;
+  total: number;
+  completed: number;
+  failed: number;
+}
+
+/** Polled while startBulkRegistration's request is in flight — same in-process progress the backend resumes from on retry (see batch-split's own status-polling). */
+export function getBulkRegistrationStatus(sheetId: string): Promise<BackendResult<BulkRegistrationStatus>> {
+  return callBackend(`/api/bulk-registration/status/${sheetId}`);
+}
+
+// ---------------------------------------------------------------------------
 // §6.2 /qualification
 // ---------------------------------------------------------------------------
 

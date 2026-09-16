@@ -384,6 +384,7 @@ guessing silently:
 |---|---|
 | Response envelope parser (Style A/B, §5) | Implemented, endpoint-keyed lookup table |
 | `/acquisition` register → upload → gate → complete (§6.1) | Implemented. Gate outcome (reject vs. flag) is config-driven (`ACQUISITION_GATE_MODE`) pending **blocker #1** (owner: Bhanu) |
+| `/bulk-registration` — spreadsheet-driven registration | Implemented — see "Bulk registration" below. Not in the original dev-context doc; another content-acquisition entry point alongside `/acquisition`, for registering many files from one CSV/Excel sheet instead of one manual upload |
 | `/qualification` view-tracking + 3-way routing (§6.2) | Clean/rework implemented. Archive returns `501` pending **blocker #2** (owner: Rifky) |
 | `/batch` split + dynamic task-graph routing (§6.3/§6.3.1) | Implemented, including the intentional DAG-routing deviation flagged to Vibhor. `get-all-tasks` verified Style A. The `input_download_url` gap that used to block this end-to-end is now resolved — see "RESOLVED" note below |
 | `/batch` by-chapter split method (`splitMethod: "by-chapter"`) | Implemented — see "Batching by chapter" below. Not in the original dev-context doc at all; added for a use case (a single large multi-chapter PDF that needs one output file per chapter, each individually qualified) that §6.3's fixed 2–5-equal-chunks model doesn't cover |
@@ -460,6 +461,57 @@ uploaded. The team working qualification/download is usually not the same
 team that ran batching, so each child needs to surface through that task's own
 normal unclaimed-files queue / "Start next file" — same as any other file —
 rather than silently belonging to the splitting operator.
+
+## Bulk registration
+
+Another content-acquisition entry point alongside `/acquisition`, added for the case where
+many files need registering at once from a spreadsheet (CSV or Excel) instead of one manual
+upload at a time. Every row registers the **same placeholder PDF** ("A quick brown fox jumps
+over the lazy dog", repeated 10 times, generated once via `pdf-lib` and reused for every row
+in every run — `backend/src/pdf/dummy.ts`) — there's no real per-row document, only a
+filename and metadata that differ, both picked from the sheet's own columns on the screen
+after upload. Parses with the `xlsx` package (handles both `.csv` and `.xlsx`/`.xls` with one
+dependency).
+
+**Two-step flow**, since the user needs to see the sheet's actual column headers before
+picking which ones to use:
+1. `POST /api/bulk-registration/parse` — uploads the sheet, returns `{ sheetId, columns,
+   rowCount }`. Parsed rows are kept server-side (in-process, keyed by `sheetId`) rather than
+   round-tripped back to the browser — same tradeoff batch-split's in-process progress makes
+   (dev tooling; lost on a container restart).
+2. `POST /api/bulk-registration/start` — takes `sheetId`, `fileNameColumn` (which column
+   supplies each row's file name), `metadataColumns` (which columns get attached as
+   `meta_data`, passed straight through to `register-job-batch-file`), and an optional `limit`
+   (caps how many of the sheet's rows, in row order, actually get registered — a safety guard
+   against kicking off a run against a much bigger sheet than intended; omit to process every
+   row). Iterates every row through the **same** register → text-extractability gate → upload
+   → complete flow as `/acquisition` (reusing the same `uwbe-client` calls, not a separate
+   implementation) — the gate itself is computed once, not once per row, since every row
+   uploads identical bytes.
+
+**Deliberately does NOT stop on the first row's failure** — unlike `/batch/split`'s
+all-or-nothing resumability (chunks of one logical parent), bulk-registration's rows are
+independent spreadsheet entries, so partial success is meaningful. Always responds `200` with
+a per-row tally (`{ total, succeeded, failed, rows: [...] }`); re-POSTing the same `sheetId`
+resumes — completed rows are skipped, failed/pending rows retry. The retry helper
+(`backend/src/lib/retry.ts`) was pulled out of `batch-split.ts` so both routes share it
+instead of duplicating uw-be's RND-flakiness retry logic.
+
+```bash
+# 1. parse — multipart upload of the sheet
+curl -X POST http://localhost:4100/api/bulk-registration/parse -F "file=@/path/to/sheet.xlsx"
+# -> { data: { sheetId, columns: [...42 headers...], rowCount } }
+
+# 2. start — iterate every row (or just the first `limit` of them), registering
+# the placeholder PDF under each row's picked filename column, with the picked
+# metadata columns attached
+curl -X POST http://localhost:4100/api/bulk-registration/start -H "Content-Type: application/json" \
+  -d '{"projectCode":"TEST-UNIFIED-WF","workflowCode":"WF001","firstTaskUid":"<taskUid>","sheetId":"<sheetId>","fileNameColumn":"Title","metadataColumns":["Author","ISBN"],"limit":10}'
+# -> { data: { total, succeeded, failed, rows: [{ rowIndex, fileName, fileId, ok, error }, ...] } }
+
+# poll progress while a large run is in flight
+curl "http://localhost:4100/api/bulk-registration/status/<sheetId>"
+```
 
 ## Transformation (PDF text → XML/JSON)
 

@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import type { TaskContext } from './types';
 import { AcquisitionScreen } from './modes/acquisition/AcquisitionScreen';
+import { BulkRegistrationScreen } from './modes/bulk-registration/BulkRegistrationScreen';
 import { QualificationScreen } from './modes/qualification/QualificationScreen';
 import { BatchSplitScreen } from './modes/batch-split/BatchSplitScreen';
 import { TransformationScreen } from './modes/transformation/TransformationScreen';
@@ -24,6 +25,7 @@ interface ModeConfig {
  */
 export const modeRegistry: Record<string, ModeConfig> = {
   ACQUISITION: { component: AcquisitionScreen, endpoints: ['register-job-batch-file', 'update-file-status'] },
+  BULK_REGISTRATION: { component: BulkRegistrationScreen, endpoints: ['register-job-batch-file', 'update-file-status'] },
   QUALIFICATION: {
     component: QualificationScreen,
     endpoints: ['get-task-ongoing-file', 'update-file-meta-data', 'update-file-status', 'flow-back-file-task'],

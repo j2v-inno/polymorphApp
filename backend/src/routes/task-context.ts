@@ -49,15 +49,15 @@ taskContextRouter.post('/resolve', async (req, res) => {
     taskUid = match.task_uid;
   }
 
-  // ACQUISITION's "register a new file" launch genuinely has no file yet —
-  // nothing further to re-validate, the file doesn't exist until acquisition
-  // registers it. Every other task's launch SHOULD have a file already
-  // claimed (uw-fe's own "Assign" action claims it before redirecting here),
-  // but none of uw-fe's external-app launch URL schemes actually include a
-  // file_id — so when it's missing and this isn't the acquisition entry
-  // task, ask uw-be "what file does this user currently have active here"
-  // instead of treating it the same as the no-file-yet case.
-  if (!pointer.fileId && taskCode === 'ACQUISITION') {
+  // ACQUISITION's and BULK_REGISTRATION's "register new file(s)" launches
+  // genuinely have no file yet — nothing further to re-validate, no file
+  // exists until registration creates one (BULK_REGISTRATION creates many,
+  // per row). Every other task's launch SHOULD have a file already claimed
+  // (uw-fe's own "Assign" action claims it before redirecting here), but none
+  // of uw-fe's external-app launch URL schemes actually include a file_id —
+  // so when it's missing and this isn't one of the no-file-yet entry tasks,
+  // ask uw-be "what file does this user currently have active here" instead.
+  if (!pointer.fileId && (taskCode === 'ACQUISITION' || taskCode === 'BULK_REGISTRATION')) {
     res.json({ ok: true, data: { ...pointer, taskCode, taskUid } });
     return;
   }

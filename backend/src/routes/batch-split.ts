@@ -4,7 +4,7 @@ import { splitPdf, type SplitMethod, type PdfChunk, type ChapterDetectionMethod 
 import { getAllTasks, registerFile, resolveActiveFile, updateFileStatus, type TaskGraphNode } from '../uwbe-client/endpoints.js';
 import { putRawBytes } from '../uwbe-client/http.js';
 import { withUniqueSuffix } from '../lib/unique-filename.js';
-import type { UwbeResult } from '../types.js';
+import { tryUwbe } from '../lib/retry.js';
 
 export const batchSplitRouter = Router();
 
@@ -125,15 +125,6 @@ batchSplitRouter.get('/split-status/:fileId', (req, res) => {
   }
   res.json({ ok: true, data: summarize(progress) });
 });
-
-async function tryUwbe<T>(fn: () => Promise<UwbeResult<T>>, attempts = 3, delayMs = 1500): Promise<UwbeResult<T>> {
-  let result = await fn();
-  for (let attempt = 1; attempt < attempts && !result.ok; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-    result = await fn();
-  }
-  return result;
-}
 
 /**
  * §6.3 — no native split primitive in uw-be. Orchestrated here as: resolve this

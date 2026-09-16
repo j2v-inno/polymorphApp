@@ -5,6 +5,7 @@ import { errorHandler } from './middleware/error-handler.js';
 import { requireAuth } from './middleware/auth.js';
 import { acquisitionRouter } from './routes/acquisition.js';
 import { batchSplitRouter } from './routes/batch-split.js';
+import { bulkRegistrationRouter } from './routes/bulk-registration.js';
 import { downloadRouter } from './routes/download.js';
 import { qualificationRouter } from './routes/qualification.js';
 import { transformationRouter } from './routes/transformation.js';
@@ -26,6 +27,7 @@ export function createApp() {
   app.use('/api', requireAuth);
   app.use('/api/task-context', taskContextRouter);
   app.use('/api/acquisition', acquisitionRouter);
+  app.use('/api/bulk-registration', bulkRegistrationRouter);
   app.use('/api/qualification', qualificationRouter);
   app.use('/api/batch', batchSplitRouter);
   app.use('/api/transformation', transformationRouter);

@@ -228,7 +228,8 @@
 
 .fluid-field input[type="text"],
 .fluid-field input:not([type]),
-.fluid-field input[type="number"] {
+.fluid-field input[type="number"],
+.fluid-field select {
   font: inherit;
   font-weight: 400;
   color: var(--fl-text);
@@ -239,7 +240,8 @@
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.fluid-field input:focus {
+.fluid-field input:focus,
+.fluid-field select:focus {
   outline: none;
   border-color: var(--fl-primary);
   box-shadow: 0 0 0 3px var(--fl-primary-soft);
@@ -550,6 +552,8 @@ p.fluid-warning {
   font-weight: 400;
   font-size: 0.88rem;
   color: var(--fl-text);
+  max-height: 280px;
+  overflow-y: auto;
 }
 
 .fluid-radio {

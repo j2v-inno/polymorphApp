@@ -18,6 +18,7 @@
  */
 const PATH_TO_TASK_CODE: Record<string, string> = {
   acquisition: 'ACQUISITION',
+  'bulk-registration': 'BULK_REGISTRATION',
   'batch-split': 'BATCH_SPLIT',
   qualification: 'QUALIFICATION',
   transformation: 'TRANSFORMATION',
