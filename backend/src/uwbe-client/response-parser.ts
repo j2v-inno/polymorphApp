@@ -38,21 +38,55 @@ interface StyleAEnvelope<T> {
   success: boolean;
   code: number;
   data?: T;
-  message?: string;
-  error?: string;
+  // Real responses don't always keep these as plain strings (e.g. a
+  // validator-errors array/object has been observed on error) — typed loosely
+  // here since pickErrorText normalizes whatever actually comes back.
+  message?: unknown;
+  error?: unknown;
 }
 
 interface StyleBEnvelope<T> {
   status: boolean;
-  error?: string;
+  error?: unknown;
   [key: string]: unknown;
+}
+
+/**
+ * Picks the first candidate that's already a usable non-empty string: `error`
+ * is normally more specific than `message`, but a response has been observed
+ * where `error` was a non-string (an empty object) while `message` was a real
+ * string — blindly preferring `error` there produced an unreadable "{}" in
+ * the UI instead of the actual message. Only falls back to JSON.stringify-ing
+ * a non-string candidate if NEITHER candidate is a usable string, so a
+ * genuinely informative object (e.g. validator errors) is still visible
+ * rather than silently discarded.
+ */
+function pickErrorText(...candidates: unknown[]): string | undefined {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c) return c;
+  }
+  for (const c of candidates) {
+    if (c !== undefined && c !== null) {
+      try {
+        return JSON.stringify(c);
+      } catch {
+        // fall through to the next candidate
+      }
+    }
+  }
+  return undefined;
 }
 
 function parseStyleA<T>(httpStatus: number, body: StyleAEnvelope<T>): UwbeResult<T> {
   if (body.success) {
     return { ok: true, data: body.data ?? null, error: null, httpStatus };
   }
-  return { ok: false, data: null, error: body.error ?? body.message ?? `request failed (code ${body.code})`, httpStatus };
+  return {
+    ok: false,
+    data: null,
+    error: pickErrorText(body.error, body.message) ?? `request failed (code ${body.code})`,
+    httpStatus,
+  };
 }
 
 function parseStyleB<T>(httpStatus: number, body: StyleBEnvelope<T>): UwbeResult<T> {
@@ -62,7 +96,7 @@ function parseStyleB<T>(httpStatus: number, body: StyleBEnvelope<T>): UwbeResult
     const { status: _status, ...rest } = body;
     return { ok: true, data: rest as T, error: null, httpStatus };
   }
-  return { ok: false, data: null, error: body.error ?? 'request failed', httpStatus };
+  return { ok: false, data: null, error: pickErrorText(body.error) ?? 'request failed', httpStatus };
 }
 
 /**
