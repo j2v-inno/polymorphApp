@@ -25,8 +25,19 @@ const PATH_TO_TASK_CODE: Record<string, string> = {
   download: 'DOWNLOAD',
 };
 
-/** First non-empty path segment, e.g. "/batch-split" or "/batch-split/" -> "batch-split". */
+/**
+ * LAST non-empty path segment, e.g. "/batch-split" -> "batch-split" — and,
+ * critically, "/ext/app/wa/batch-split" (the real deployed shape, nested
+ * under the frontend's base path) -> "batch-split" too, not "ext". Using the
+ * FIRST segment (the original implementation) silently returned undefined
+ * for every mode on every real deployment — never caught before because the
+ * App.tsx caller's own `?? state.taskContext.taskCode` fallback happened to
+ * paper over it for every mode whose real uw-be task `code` column already
+ * matched; confirmed broken via BULK_REGISTRATION, the first mode where that
+ * fallback also failed (see task-context.ts's own doc comment on that bug).
+ */
 export function resolveModeFromPath(pathname: string = window.location.pathname): string | undefined {
-  const segment = pathname.split('/').find((s) => s.length > 0);
+  const segments = pathname.split('/').filter((s) => s.length > 0);
+  const segment = segments[segments.length - 1];
   return segment ? PATH_TO_TASK_CODE[segment.toLowerCase()] : undefined;
 }
