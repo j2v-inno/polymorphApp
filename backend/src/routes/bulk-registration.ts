@@ -97,6 +97,8 @@ bulkRegistrationRouter.get('/:sheetId/column-values', (req, res) => {
 interface StartBody {
   projectCode: string;
   workflowCode: string;
+  /** Plumbing only — uw-be calls use workflowCode. Kept so payloads mirror the launch URL. */
+  workflowId?: number;
   firstTaskUid: string;
   sheetId: string;
   fileNameColumn: string;
@@ -313,6 +315,12 @@ bulkRegistrationRouter.post('/start', async (req, res) => {
               fileId: row.registeredFileId!,
               previousFileStatus: 'I',
               fileStatus: 'C',
+              // Merge row metadata on completion too — update_file_status merges this
+              // into files.meta_data BEFORE routing evaluates it, so routing is
+              // deterministic even for rows whose registration-time storage was
+              // skipped (pre-fix or resumed). Handles the applicable
+              // meta_data_expression edges (user_decides_next_task=0 tasks ignore nextTask).
+              metaData: row.metaData,
               nextTask: nextTaskUid,
               userId: body.userId,
             })

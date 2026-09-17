@@ -31,7 +31,6 @@ type Status =
  */
 export function BulkRegistrationScreen({ taskContext }: Props) {
   const [sheetFile, setSheetFile] = useState<File | null>(null);
-  const [workflowCode, setWorkflowCode] = useState(taskContext.workflowCode ?? '');
   const [fileNameColumn, setFileNameColumn] = useState('');
   const [metadataColumns, setMetadataColumns] = useState<string[]>([]);
   /** String, not number, so the field can sit empty (= no limit, register every row) without fighting a numeric default. */
@@ -92,7 +91,7 @@ export function BulkRegistrationScreen({ taskContext }: Props) {
   async function handleStart() {
     if (status.kind !== 'picking' && status.kind !== 'done') return;
     const sheet = status.kind === 'picking' ? status.sheet : status.sheet;
-    if (!workflowCode.trim() || !fileNameColumn) return;
+    if (!taskContext.workflowCode || !fileNameColumn) return;
 
     let limit: number | undefined;
     if (limitInput.trim()) {
@@ -116,7 +115,7 @@ export function BulkRegistrationScreen({ taskContext }: Props) {
     }, 1500);
 
     const result = await startBulkRegistration(taskContext, {
-      workflowCode,
+      workflowCode: taskContext.workflowCode ?? '',
       sheetId: sheet.sheetId,
       fileNameColumn,
       metadataColumns,
@@ -184,7 +183,7 @@ export function BulkRegistrationScreen({ taskContext }: Props) {
 
           <label className="fluid-field">
             Workflow code
-            <input value={workflowCode} onChange={(event) => setWorkflowCode(event.target.value)} disabled={isRunning} />
+            <input value={taskContext.workflowCode ?? ''} disabled readOnly />
           </label>
 
           <label className="fluid-field">
@@ -275,7 +274,7 @@ export function BulkRegistrationScreen({ taskContext }: Props) {
             <button
               className="fluid-btn fluid-btn--primary"
               onClick={handleStart}
-              disabled={!workflowCode.trim() || !fileNameColumn || isRunning}
+              disabled={!taskContext.workflowCode || !fileNameColumn || isRunning}
             >
               {isRunning && <span className="fluid-spinner" />}
               {isRunning ? 'Registering…' : 'Start bulk registration'}

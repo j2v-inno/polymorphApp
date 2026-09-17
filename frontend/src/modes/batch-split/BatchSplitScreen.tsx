@@ -27,11 +27,8 @@ const DETECTION_METHOD_LABEL: Record<ChapterDetectionMethod, string> = {
  * the transformed output, not these chapters' raw PDFs).
  */
 export function BatchSplitScreen({ taskContext }: Props) {
-  // Pre-filled from the launch context when available (real uw-fe launch
-  // URLs do carry workflow_code — task-context.ts resolves it into
-  // taskContext.workflowCode). Still a manual, editable field for launch
-  // paths that don't supply it, rather than a hard requirement.
-  const [workflowCode, setWorkflowCode] = useState(taskContext.workflowCode ?? '');
+  // workflow_code/workflow_id come from the launch URL via task-context.ts —
+  // read-only here, no manual entry.
   const [splitMethod, setSplitMethod] = useState<SplitMethod>('equal-pages');
   const [status, setStatus] = useState<'idle' | 'splitting' | 'error' | 'done'>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +51,7 @@ export function BatchSplitScreen({ taskContext }: Props) {
   useEffect(() => stopPolling, []);
 
   async function handleSplit() {
-    if (!workflowCode.trim()) {
+    if (!taskContext.workflowCode) {
       setError('workflow code is required to resolve the target task graph (§6.3.1)');
       return;
     }
@@ -74,7 +71,7 @@ export function BatchSplitScreen({ taskContext }: Props) {
       }, 1500);
     }
 
-    const result = await splitBatch(taskContext, workflowCode, splitMethod);
+    const result = await splitBatch(taskContext, taskContext.workflowCode ?? '', splitMethod);
     stopPolling();
 
     if (!result.ok || !result.data) {
@@ -101,7 +98,7 @@ export function BatchSplitScreen({ taskContext }: Props) {
 
       <label className="fluid-field">
         Workflow code
-        <input value={workflowCode} onChange={(event) => setWorkflowCode(event.target.value)} />
+        <input value={taskContext.workflowCode ?? ''} disabled readOnly />
       </label>
 
       <div className="fluid-field">

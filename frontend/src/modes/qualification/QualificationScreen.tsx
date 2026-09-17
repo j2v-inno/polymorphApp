@@ -39,9 +39,6 @@ function extractEditableMetadata(metaData: Record<string, unknown> | null | unde
 
 /** §6.2 — page-by-page review with error flagging, then 3-way routing. */
 export function QualificationScreen({ taskContext }: Props) {
-  // Pre-filled from the launch context when available — see the same note
-  // in BatchSplitScreen.tsx.
-  const [workflowCode, setWorkflowCode] = useState(taskContext.workflowCode ?? '');
   const [context, setContext] = useState<QualificationContext | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -59,15 +56,15 @@ export function QualificationScreen({ taskContext }: Props) {
   const [rawContent, setRawContent] = useState<string | null>(null);
   const [contentError, setContentError] = useState<string | null>(null);
 
-  // TaskContext doesn't carry workflowCode (same gap BatchSplitScreen/DownloadScreen
-  // have) — needed to resolve this task's task_uid via get-all-tasks.
+  // workflow_code/workflow_id come from the launch URL via task-context.ts —
+  // needed to resolve this task's task_uid via get-all-tasks.
   function loadContext() {
-    if (!workflowCode.trim()) {
+    if (!taskContext.workflowCode) {
       setLoadError('workflow code is required to resolve this task (§6.2)');
       return;
     }
     setLoadError(null);
-    getQualificationContext(taskContext, workflowCode).then((result) => {
+    getQualificationContext(taskContext, taskContext.workflowCode).then((result) => {
       if (!result.ok || !result.data) {
         setLoadError(result.error ?? 'failed to load task context');
         return;
@@ -76,6 +73,13 @@ export function QualificationScreen({ taskContext }: Props) {
       setMetadataFields(extractEditableMetadata(result.data.meta_data));
     });
   }
+
+  // §6.2 step 1 — auto-load the queued file on mount from the URL-supplied
+  // task context (no manual workflow-code entry anymore).
+  useEffect(() => {
+    loadContext();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Set by the Transformation task's meta_data — when present, this file is
   // structured XML/JSON, not a PDF, so the page-nav/iframe viewer below is
@@ -179,16 +183,7 @@ export function QualificationScreen({ taskContext }: Props) {
     return (
       <div className="fluid-screen fluid-screen--qualification">
         <h1>Qualification</h1>
-        <p>Enter this task's workflow code to load the file queued for review.</p>
-        <label className="fluid-field">
-          Workflow code
-          <input value={workflowCode} onChange={(event) => setWorkflowCode(event.target.value)} />
-        </label>
-        <div className="fluid-actions">
-          <button className="fluid-btn fluid-btn--primary" onClick={loadContext}>
-            Load
-          </button>
-        </div>
+        <p>Loading the file queued for review…</p>
         {loadError && <p className="fluid-alert fluid-alert--error">{loadError}</p>}
       </div>
     );

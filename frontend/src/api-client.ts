@@ -87,6 +87,7 @@ export function registerAndUploadAcquisition(
   const formData = new FormData();
   formData.append('file', file);
   formData.append('projectCode', taskContext.projectCode);
+  formData.append('workflowId', taskContext.workflowId !== undefined ? String(taskContext.workflowId) : '');
   // workflowCode (e.g. "MAINFLOW") — NOT taskCode (the mode key, e.g. "ACQUISITION").
   // firstTaskUid must be the real task_uid string, NOT the internal numeric taskId.
   formData.append('workflowCode', taskContext.workflowCode ?? '');
@@ -160,6 +161,7 @@ export function startBulkRegistration(
     body: {
       projectCode: taskContext.projectCode,
       workflowCode: options.workflowCode,
+      workflowId: taskContext.workflowId,
       firstTaskUid: taskContext.taskUid,
       sheetId: options.sheetId,
       fileNameColumn: options.fileNameColumn,
@@ -204,6 +206,7 @@ export function getQualificationContext(taskContext: TaskContext, workflowCode: 
       projectId: taskContext.projectId,
       projectCode: taskContext.projectCode,
       workflowCode,
+      workflowId: taskContext.workflowId,
       taskId: taskContext.taskId,
       fileId: taskContext.fileId,
       jobId: taskContext.jobId,
@@ -216,6 +219,7 @@ export function postPagesViewed(taskContext: TaskContext, taskUid: string, pages
     method: 'POST',
     body: {
       projectCode: taskContext.projectCode,
+      workflowId: taskContext.workflowId,
       taskUid,
       fileId: taskContext.fileId,
       jobId: taskContext.jobId,
@@ -233,6 +237,7 @@ export function updateQualificationMetadata(
     method: 'POST',
     body: {
       projectCode: taskContext.projectCode,
+      workflowId: taskContext.workflowId,
       taskUid,
       fileId: taskContext.fileId,
       jobId: taskContext.jobId,
@@ -254,6 +259,7 @@ export function completeQualification(
     method: 'POST',
     body: {
       projectCode: taskContext.projectCode,
+      workflowId: taskContext.workflowId,
       taskUid,
       fileId: taskContext.fileId,
       pagesWithErrors,
@@ -313,6 +319,7 @@ export function splitBatch(
       projectId: taskContext.projectId,
       projectCode: taskContext.projectCode,
       workflowCode,
+      workflowId: taskContext.workflowId,
       taskId: taskContext.taskId,
       jobId: taskContext.jobId,
       batchId: taskContext.batchId,
@@ -361,6 +368,7 @@ export function transformFile(
       projectId: taskContext.projectId,
       projectCode: taskContext.projectCode,
       workflowCode,
+      workflowId: taskContext.workflowId,
       taskId: taskContext.taskId,
       jobId: taskContext.jobId,
       batchId: taskContext.batchId,
@@ -396,6 +404,7 @@ export function getDownloadLinks(
       projectId: taskContext.projectId,
       projectCode: taskContext.projectCode,
       workflowCode,
+      workflowId: taskContext.workflowId,
       taskId: taskContext.taskId,
       fileIds: fileIds.join(','),
     },

@@ -13,6 +13,8 @@ export interface TaskContext {
   /** Optional: absent for "register a new file" launches (e.g. ACQUISITION) — there's no file yet. */
   fileId?: number;
   projectId: number;
+  /** Plumbing only — carried for payload fidelity with the launch URL (workflow_id); uw-be endpoints use workflowCode. */
+  workflowId?: number;
   /** Optional: only present once a file exists (see fileId). */
   jobId?: number;
   batchId?: number;

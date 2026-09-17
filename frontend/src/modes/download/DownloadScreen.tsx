@@ -11,8 +11,8 @@ interface Props {
  *
  * get-file-task-output requires task_uid, which TaskContext doesn't carry
  * directly (only the internal numeric taskId) — the backend resolves it via
- * get-all-tasks, which needs workflowCode. TaskContext doesn't carry that
- * either (same gap BatchSplitScreen has), so it's a manual input here too.
+ * get-all-tasks, which needs workflowCode. Both come from the launch URL
+ * (task-context.ts); no manual entry.
  *
  * The doc's "×N (one per split child)" assumes the caller already knows every
  * sibling file ID; how this screen discovers all N split-file IDs from a single
@@ -22,9 +22,6 @@ interface Props {
  * affordance until sibling discovery is confirmed.
  */
 export function DownloadScreen({ taskContext }: Props) {
-  // Pre-filled from the launch context when available — see the same note
-  // in BatchSplitScreen.tsx.
-  const [workflowCode, setWorkflowCode] = useState(taskContext.workflowCode ?? '');
   const [fileIds, setFileIds] = useState<number[]>(taskContext.fileId ? [taskContext.fileId] : []);
   const [extraFileId, setExtraFileId] = useState('');
   const [links, setLinks] = useState<DownloadLink[]>([]);
@@ -32,13 +29,13 @@ export function DownloadScreen({ taskContext }: Props) {
   const [loading, setLoading] = useState(false);
 
   async function refresh(ids: number[]) {
-    if (!workflowCode.trim()) {
+    if (!taskContext.workflowCode) {
       setError('workflow code is required to resolve task_uid for these file IDs (§6.4)');
       return;
     }
     setLoading(true);
     setError(null);
-    const result = await getDownloadLinks(taskContext, workflowCode, ids);
+    const result = await getDownloadLinks(taskContext, taskContext.workflowCode ?? '', ids);
     setLoading(false);
     if (!result.ok || !result.data) {
       setError(result.error ?? 'failed to resolve download links');
@@ -62,7 +59,7 @@ export function DownloadScreen({ taskContext }: Props) {
 
       <label className="fluid-field">
         Workflow code
-        <input value={workflowCode} onChange={(event) => setWorkflowCode(event.target.value)} />
+        <input value={taskContext.workflowCode ?? ''} disabled readOnly />
       </label>
 
       <div className="fluid-inline-field">

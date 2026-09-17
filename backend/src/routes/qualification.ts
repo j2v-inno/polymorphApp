@@ -68,6 +68,8 @@ qualificationRouter.get('/content-proxy', async (req, res) => {
 
 interface PagesViewedBody {
   projectCode: string;
+  /** Plumbing only — uw-be calls use taskUid + workflowCode elsewhere. Kept so payloads mirror the launch URL. */
+  workflowId?: number;
   taskUid: string;
   fileId: number;
   jobId: number;
@@ -94,6 +96,8 @@ qualificationRouter.post('/pages-viewed', async (req, res) => {
 
 interface MetadataBody {
   projectCode: string;
+  /** Plumbing only — kept so payloads mirror the launch URL. */
+  workflowId?: number;
   taskUid: string;
   fileId: number;
   jobId: number;
@@ -129,6 +133,8 @@ qualificationRouter.post('/metadata', async (req, res) => {
 
 interface CompleteBody {
   projectCode: string;
+  /** Plumbing only — kept so payloads mirror the launch URL. */
+  workflowId?: number;
   taskUid: string;
   fileId: number;
   pagesWithErrors: number[];

@@ -20,6 +20,11 @@ export interface RegisterJobBatchFileParams {
   fileName: string;
   filePath: string;
   fileUniqueIdentifier: string;
+  /**
+   * Sent as `file_meta_data` — register_job_batch_file (TaskProcessController.php:1239)
+   * is the one endpoint that reads `file_meta_data` rather than `meta_data` (like
+   * register-file/update-file-status do). Sending `meta_data` silently drops it.
+   */
   metaData?: Record<string, unknown>;
   /**
    * uw-be defaults this to 1 (system) when omitted (TaskProcessController.php:903,
@@ -65,7 +70,7 @@ export function registerJobBatchFile(params: RegisterJobBatchFileParams): Promis
       // Real param is `unique_identifier` — the doc's `file_unique_identifier` doesn't
       // exist on TaskProcessController@register_job_batch_file (uw-be:829-847).
       unique_identifier: params.fileUniqueIdentifier,
-      meta_data: params.metaData,
+      file_meta_data: params.metaData,
       user_id: params.userId,
     },
   });

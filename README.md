@@ -86,8 +86,13 @@ self-mounts the app with `customProps: {}` (verified — see the generated
 to parsing the URL (§3.2) — append the launch query params to drive a screen, e.g.:
 
 ```
-http://localhost:9100/?task_code=ACQUISITION&project_id=334&job_id=87789&batch_id=557886&file_id=555359&task_id=3758&user_id=503&project_code=TEST-UNIFIED-WF&user_login_id=PV4
+http://localhost:9100/wa/bulk-registration?project_id=2&project_code=TRANSAPPTEST&workflow_id=6&workflow_code=OTS&task_id=14&task_uid=16899866e6904edeae65992fbfacd619&user_id=7
 ```
+
+Every screen reads its context straight from these params (`task-context.ts`) —
+`project_code`/`workflow_code`/`task_uid`/`user_id`/`workflow_id` are not typed in
+by hand. `workflow_id` is carried through the payloads as plumbing; uw-be keys off
+the codes and numeric ids.
 
 Change `task_code`/`file_id`/etc. between page loads to move through
 qualification/batch/download using the IDs each previous step returned (the curl

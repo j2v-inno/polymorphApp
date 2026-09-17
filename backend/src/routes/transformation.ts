@@ -12,6 +12,8 @@ interface TransformBody {
   projectId: number;
   projectCode: string;
   workflowCode: string;
+  /** Plumbing only — uw-be calls use workflowCode. Kept so payloads mirror the launch URL. */
+  workflowId?: number;
   taskId: number;
   jobId: number;
   batchId: number;

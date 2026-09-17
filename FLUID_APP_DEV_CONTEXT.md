@@ -87,18 +87,26 @@ Same context, supplied as URL query params, matching the legacy launch pattern:
 ```
 https://<fluid-app-host>/<screen>?
   project_id=334
+  &project_code=TEST-UNIFIED-WF
+  &workflow_id=6
+  &workflow_code=OTS
   &job_id=87789
   &batch_id=557886
   &file_id=555359
   &task_id=3758
+  &task_uid=16899866e6904edeae65992fbfacd619
   &user_id=503
-  &project_code=TEST-UNIFIED-WF
   &job_name=UF0001
   &batch_name=UF0001013
   &file_name=Get_Started_With_Smallpdf.pdf
   &task_code=ACQUISITION        <!-- this selects the mode -->
   &user_login_id=PV4
 ```
+
+Every screen sources its payload fields from these params via `task-context.ts`
+(`workflow_code`, `project_code`, etc. are read-only in the UI — no manual entry).
+`workflow_id` is carried through to each backend payload as plumbing only; the
+uw-be calls themselves key off `workflow_code`/`task_uid`/`project_id`.
 
 ### 3.3 Rules (both modes)
 

@@ -14,22 +14,20 @@ interface Props {
  * deviation this represents.
  */
 export function TransformationScreen({ taskContext }: Props) {
-  // Pre-filled from the launch context when available — same note as
-  // BatchSplitScreen.tsx/QualificationScreen.tsx.
-  const [workflowCode, setWorkflowCode] = useState(taskContext.workflowCode ?? '');
+  // workflow_code/workflow_id come from the launch URL via task-context.ts.
   const [format, setFormat] = useState<TransformFormat>('json');
   const [status, setStatus] = useState<'idle' | 'transforming' | 'error' | 'done'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TransformResult | null>(null);
 
   async function handleTransform() {
-    if (!workflowCode.trim()) {
+    if (!taskContext.workflowCode) {
       setError('workflow code is required to resolve the target task graph');
       return;
     }
     setStatus('transforming');
     setError(null);
-    const response = await transformFile(taskContext, workflowCode, format);
+    const response = await transformFile(taskContext, taskContext.workflowCode ?? '', format);
     if (!response.ok || !response.data) {
       setStatus('error');
       setError(response.error ?? 'transformation failed');
@@ -50,7 +48,7 @@ export function TransformationScreen({ taskContext }: Props) {
 
       <label className="fluid-field">
         Workflow code
-        <input value={workflowCode} onChange={(event) => setWorkflowCode(event.target.value)} />
+        <input value={taskContext.workflowCode ?? ''} disabled readOnly />
       </label>
 
       <div className="fluid-field">

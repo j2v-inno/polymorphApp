@@ -44,6 +44,10 @@ function resolveFromUrl(): TaskContext {
     // Optional: absent for "register a new file" launches — there's no file yet.
     fileId: num('file_id'),
     projectId: num('project_id') ?? NaN,
+    // Plumbing only — no uw-be endpoint consumes it (all registration/status
+    // calls use workflow_code); carried end-to-end so payloads mirror the
+    // launch URL, which always includes workflow_id.
+    workflowId: num('workflow_id'),
     jobId: num('job_id'),
     batchId: num('batch_id'),
     projectCode: params.get('project_code') ?? '',
