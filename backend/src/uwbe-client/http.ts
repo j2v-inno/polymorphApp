@@ -6,6 +6,8 @@ interface CallOptions {
   method?: 'GET' | 'POST' | 'PUT';
   query?: Record<string, string | number | undefined>;
   body?: Record<string, unknown>;
+  /** Overrides `endpoint` for the ENDPOINT_STYLES lookup — needed when `endpoint` is a dynamic path (e.g. `tasks/{uid}`) that can't itself be a stable map key. */
+  styleKey?: string;
 }
 
 /** §4 tenancy rule: a missing/wrong project_code fails silently downstream. Fail loudly here instead. */
@@ -72,7 +74,7 @@ export async function callUwbe<T>(endpoint: string, opts: CallOptions = {}): Pro
     };
   }
 
-  return parseUwbeResponse<T>(endpoint, response.status, parsedBody);
+  return parseUwbeResponse<T>(opts.styleKey ?? endpoint, response.status, parsedBody);
 }
 
 /** Uploads raw bytes to a pre-signed URL returned by register-job-batch-file / register-file. Not a uw-be envelope call. */

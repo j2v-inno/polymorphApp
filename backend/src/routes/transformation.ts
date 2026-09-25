@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { config } from '../config.js';
 import { extractPerPageText } from '../pdf/split.js';
 import { buildTransformDocument, serializeTransformDocument, type TransformFormat } from '../pdf/transform.js';
-import { getAllTasks, registerFile, resolveActiveFile, updateFileStatus, type TaskGraphNode } from '../uwbe-client/endpoints.js';
+import { getAllTasks, getTaskWithNextTasks, registerFile, resolveActiveFile, updateFileStatus, type NextTaskEdge } from '../uwbe-client/endpoints.js';
 import { putRawBytes } from '../uwbe-client/http.js';
 import { withUniqueSuffix } from '../lib/unique-filename.js';
 
@@ -23,8 +23,8 @@ interface TransformBody {
   userId?: number;
 }
 
-function findTaskUid(tasks: TaskGraphNode[], taskCode: string): string | undefined {
-  return tasks.find((t) => t.code === taskCode)?.task_uid;
+function findNextTaskUid(nextTasks: NextTaskEdge[], taskCode: string): string | undefined {
+  return nextTasks.find((t) => t.code === taskCode)?.task_uid;
 }
 
 /**
@@ -58,6 +58,7 @@ transformationRouter.post('/transform', async (req, res) => {
     taskUid: currentTask.task_uid,
     fileId: body.fileId,
     jobId: body.jobId,
+    userId: body.userId,
   });
   if (!fileContext.ok || !fileContext.data) {
     res.status(404).json({ ok: false, error: fileContext.error ?? 'could not resolve the chapter file context' });
@@ -70,17 +71,38 @@ transformationRouter.post('/transform', async (req, res) => {
     return;
   }
 
+  // This task is launched without file_id/job_id/batch_id in the launch URL
+  // (uw-be's external-app URL builder appends project/task/user only —
+  // Web/TaskProcessController.php): resolveActiveFile picked the chapter, so
+  // the REAL file identity is whatever it returned, and the nulls from the
+  // request body must not be forwarded to uw-be's update/register calls, which
+  // hard-require file_id (and job_id unless job_name) — see
+  // TaskProcessController.php:1901-1903 and 460-477.
+  const resolvedFileId = typeof fileContext.data.id === 'number' ? fileContext.data.id : body.fileId;
+  const resolvedJobId = typeof fileContext.data.job_id === 'number' ? fileContext.data.job_id : body.jobId;
+  const resolvedBatchId = typeof fileContext.data.batch_id === 'number' ? fileContext.data.batch_id : body.batchId;
+  const resolvedFileName = typeof fileContext.data.file_name === 'string'
+    ? fileContext.data.file_name
+    : (typeof body.fileName === 'string' ? body.fileName : `file-${resolvedFileId}.pdf`);
+
   const meta = (fileContext.data.meta_data ?? {}) as {
     parent_file_id?: number;
     split_index?: number;
     chapter_title?: string;
   };
 
-  const qualificationTaskUid = findTaskUid(taskGraph.data, config.batchSplit.qualificationTaskCode);
+  // Scope the lookup to this task's own next_tasks (real DAG edges) rather
+  // than get-all-tasks's flat, edge-less list — see batch-split.ts's same fix.
+  const taskDetail = await getTaskWithNextTasks(currentTask.task_uid);
+  if (!taskDetail.ok || !taskDetail.data) {
+    res.status(502).json({ ok: false, error: taskDetail.error ?? 'could not resolve next tasks for this task' });
+    return;
+  }
+  const qualificationTaskUid = findNextTaskUid(taskDetail.data.next_tasks, config.batchSplit.qualificationTaskCode);
   if (!qualificationTaskUid) {
     res.status(502).json({
       ok: false,
-      error: `no task with code "${config.batchSplit.qualificationTaskCode}" found in the workflow graph`,
+      error: `no task with code "${config.batchSplit.qualificationTaskCode}" reachable as a next task from this task`,
     });
     return;
   }
@@ -89,7 +111,7 @@ transformationRouter.post('/transform', async (req, res) => {
   const completion = await updateFileStatus({
     projectCode: body.projectCode,
     taskUid: currentTask.task_uid,
-    fileId: body.fileId,
+    fileId: resolvedFileId,
     previousFileStatus: 'I',
     fileStatus: 'C',
     userId: body.userId,
@@ -108,7 +130,7 @@ transformationRouter.post('/transform', async (req, res) => {
 
   const pages = await extractPerPageText(pdfBytes);
   const doc = buildTransformDocument(pages, {
-    sourceFileId: body.fileId,
+    sourceFileId: resolvedFileId,
     parentFileId: meta.parent_file_id ?? null,
     splitIndex: meta.split_index ?? null,
     chapterTitle: meta.chapter_title ?? null,
@@ -116,16 +138,16 @@ transformationRouter.post('/transform', async (req, res) => {
   const serialized = serializeTransformDocument(doc, body.format);
   const contentType = body.format === 'xml' ? 'application/xml' : 'application/json';
 
-  const outputFileName = withUniqueSuffix(`${body.fileName.replace(/\.pdf$/i, '')}.${body.format}`);
+  const outputFileName = withUniqueSuffix(`${resolvedFileName.replace(/\.pdf$/i, '')}.${body.format}`);
 
   const registered = await registerFile({
     projectCode: body.projectCode,
-    jobId: body.jobId,
-    batchId: body.batchId,
+    jobId: resolvedJobId,
+    batchId: resolvedBatchId,
     firstTaskUid: qualificationTaskUid,
     fileName: outputFileName,
     metaData: {
-      parent_file_id: body.fileId,
+      parent_file_id: resolvedFileId,
       ...(meta.split_index !== undefined ? { split_index: meta.split_index } : {}),
       ...(meta.chapter_title ? { chapter_title: meta.chapter_title } : {}),
       content_format: body.format,

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { config } from '../config.js';
 import { splitPdf, type SplitMethod, type PdfChunk, type ChapterDetectionMethod } from '../pdf/split.js';
-import { getAllTasks, registerFile, resolveActiveFile, updateFileStatus, type TaskGraphNode } from '../uwbe-client/endpoints.js';
+import { getAllTasks, getTaskWithNextTasks, registerFile, resolveActiveFile, updateFileStatus, type NextTaskEdge, type TaskGraphNode } from '../uwbe-client/endpoints.js';
 import { putRawBytes } from '../uwbe-client/http.js';
 import { withUniqueSuffix } from '../lib/unique-filename.js';
 import { tryUwbe } from '../lib/retry.js';
@@ -26,6 +26,10 @@ interface SplitBody {
 
 function findTaskUid(tasks: TaskGraphNode[], taskCode: string): string | undefined {
   return tasks.find((t) => t.code === taskCode)?.task_uid;
+}
+
+function findNextTaskUid(nextTasks: NextTaskEdge[], taskCode: string): string | undefined {
+  return nextTasks.find((t) => t.code === taskCode)?.task_uid;
 }
 
 interface PlannedChunk {
@@ -183,6 +187,7 @@ batchSplitRouter.post('/split', async (req, res) => {
       taskUid: currentTask.task_uid,
       fileId: body.fileId,
       jobId: body.jobId,
+      userId: body.userId,
     });
     if (!parentContext.ok || !parentContext.data) {
       inFlightSplits.delete(body.fileId);
@@ -213,9 +218,23 @@ batchSplitRouter.post('/split', async (req, res) => {
     const splitMethod: SplitMethod = body.splitMethod ?? 'equal-pages';
 
     // Resolve target tasks dynamically (§6.3.1) — never hardcode a task_uid.
+    // Confirmed against a real GET tasks/{uid} call (2026-09-24): BATCH_SPLIT's
+    // only actual next_tasks edge is TRANSFORMATION (pivot qa_result: "P") — the
+    // by-chapter path genuinely follows the DAG, so its target is scoped to
+    // next_tasks. DOWNLOAD/MANUAL_FIX are NOT edges of this task at all — the
+    // equal-pages path's routing there is the intentional DAG deviation the
+    // comment below already calls out, so those two stay resolved against
+    // get-all-tasks's flat, workflow-wide list like before.
     const downloadReadyTaskUid = findTaskUid(taskGraph.data, config.batchSplit.downloadReadyTaskCode);
     const manualFixTaskUid = findTaskUid(taskGraph.data, config.batchSplit.manualFixTaskCode);
-    const transformTaskUid = findTaskUid(taskGraph.data, config.batchSplit.transformTaskCode);
+
+    const taskDetail = await getTaskWithNextTasks(currentTask.task_uid);
+    if (!taskDetail.ok || !taskDetail.data) {
+      inFlightSplits.delete(body.fileId);
+      res.status(409).json({ ok: false, error: taskDetail.error ?? 'could not resolve next tasks for this task' });
+      return;
+    }
+    const transformTaskUid = findNextTaskUid(taskDetail.data.next_tasks, config.batchSplit.transformTaskCode);
 
     // by-chapter has no pages_with_errors yet (qualification hasn't run on these
     // chapters — that happens AFTER transformation, per-chapter), so every chunk
@@ -224,7 +243,7 @@ batchSplitRouter.post('/split', async (req, res) => {
     // what routes each chapter onward to qualification (routes/transformation.ts).
     if (splitMethod === 'by-chapter' && !transformTaskUid) {
       inFlightSplits.delete(body.fileId);
-      res.status(409).json({ ok: false, error: `no task with code "${config.batchSplit.transformTaskCode}" found in the workflow graph` });
+      res.status(409).json({ ok: false, error: `no task with code "${config.batchSplit.transformTaskCode}" reachable as a next task from this task` });
       return;
     }
     if (splitMethod === 'equal-pages' && !downloadReadyTaskUid) {

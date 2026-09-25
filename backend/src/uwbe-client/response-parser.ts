@@ -31,6 +31,7 @@ const ENDPOINT_STYLES: Record<string, EnvelopeStyle> = {
   'get-task-ongoing-file': 'A',
   'get-file-task-output': 'A',
   'get-all-tasks': 'A',
+  'tasks/{uid}': 'A',
   'flow-back-file-task': 'B',
 };
 

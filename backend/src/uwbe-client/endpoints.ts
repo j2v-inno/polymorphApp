@@ -164,6 +164,14 @@ export interface GetTaskNextFileWithStartParams {
   projectCode: string;
   taskUid: string;
   fileId: number;
+  /**
+   * Passed through to uw-be's claim — the claim session (file_task_users) and
+   * the later completion (update-file-status, guarded on
+   * `user_id = ? and file_status_ended is null`) must belong to the SAME user,
+   * otherwise completion fails with "File is already updated."
+   * uw-be defaults to user 1 when omitted.
+   */
+  userId?: number;
 }
 
 export interface StartedTaskFile {
@@ -203,6 +211,7 @@ export async function getTaskNextFileWithStart(params: GetTaskNextFileWithStartP
       project_code: params.projectCode,
       task_uid: params.taskUid,
       file_id: params.fileId,
+      user_id: params.userId,
     },
   });
   if (!result.ok || !result.data) return { ...result, data: null };
@@ -232,6 +241,13 @@ export interface ResolveActiveFileParams {
   taskUid: string;
   fileId: number;
   jobId?: number;
+  /**
+   * Must match the user that later completes the file — the claim session
+   * created by get-task-next-file-with-start (below) and the completion's
+   * guarded UPDATE (update-file-status, matched on user_id) would otherwise
+   * diverge, and completion fails with "File is already updated."
+   */
+  userId?: number;
 }
 
 export interface ActiveFileContext {
@@ -262,6 +278,7 @@ export async function resolveActiveFile(params: ResolveActiveFileParams): Promis
     taskId: params.taskId,
     fileId: params.fileId,
     jobId: params.jobId,
+    userId: params.userId,
   });
   if (ongoing.ok && ongoing.data) {
     return {
@@ -281,6 +298,7 @@ export async function resolveActiveFile(params: ResolveActiveFileParams): Promis
     projectCode: params.projectCode,
     taskUid: params.taskUid,
     fileId: params.fileId,
+    userId: params.userId,
   });
   if (!started.ok || !started.data) {
     return {
@@ -442,6 +460,39 @@ export function getAllTasks(params: GetAllTasksParams): Promise<UwbeResult<TaskG
       workflow_code: params.workflowCode,
     },
   });
+}
+
+export interface NextTaskEdge {
+  id: number;
+  task_uid: string;
+  code: string;
+  task_order: number;
+  /** task_next_tasks pivot columns (Task.php:39-43) — the actual DAG edge data get-all-tasks doesn't carry. */
+  pivot?: {
+    input_source?: string;
+    input_source_task_id?: number;
+    meta_data_expression?: string | null;
+    qa_result?: string | null;
+    remarks?: string | null;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+export interface TaskDetail extends TaskGraphNode {
+  next_tasks: NextTaskEdge[];
+}
+
+/**
+ * GET tasks/{uid} (TaskController@show, routes/api.php:42) — loads the task
+ * with its nextTasks relation via getTaskWithNextByUid (Helper_functions.php:553).
+ * Unlike get-all-tasks's flat, edge-less list, this scopes "what can come
+ * next" to actual task_next_tasks rows for this task_uid, pivot data included.
+ * Style A confirmed live (2026-09-24) — registered as 'tasks/{uid}' in
+ * ENDPOINT_STYLES since the real URL path can't be a stable map key.
+ */
+export function getTaskWithNextTasks(taskUid: string): Promise<UwbeResult<TaskDetail>> {
+  return callUwbe<TaskDetail>(`tasks/${taskUid}`, { method: 'GET', styleKey: 'tasks/{uid}' });
 }
 
 // ---------------------------------------------------------------------------

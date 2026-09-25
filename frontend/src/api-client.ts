@@ -373,7 +373,7 @@ export function transformFile(
       jobId: taskContext.jobId,
       batchId: taskContext.batchId,
       fileId: taskContext.fileId,
-      fileName: taskContext.fileName ?? `file-${taskContext.fileId}.pdf`,
+      fileName: taskContext.fileName,
       format,
       userId: taskContext.userId,
     },

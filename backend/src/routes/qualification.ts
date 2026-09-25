@@ -17,6 +17,7 @@ qualificationRouter.get('/context', async (req, res) => {
   const taskId = Number(req.query.taskId);
   const fileId = Number(req.query.fileId);
   const jobId = req.query.jobId ? Number(req.query.jobId) : undefined;
+  const userId = req.query.userId ? Number(req.query.userId) : undefined;
 
   if (!projectId || !projectCode || !workflowCode || !taskId || !fileId) {
     res.status(400).json({ ok: false, error: 'projectId, projectCode, workflowCode, taskId, and fileId are required' });
@@ -34,7 +35,7 @@ qualificationRouter.get('/context', async (req, res) => {
     return;
   }
 
-  const result = await resolveActiveFile({ projectId, projectCode, taskId, taskUid: currentTask.task_uid, fileId, jobId });
+  const result = await resolveActiveFile({ projectId, projectCode, taskId, taskUid: currentTask.task_uid, fileId, jobId, userId });
   if (!result.ok || !result.data) {
     res.status(404).json({ ok: false, error: result.error });
     return;
