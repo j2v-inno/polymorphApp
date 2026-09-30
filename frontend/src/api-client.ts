@@ -261,10 +261,13 @@ export function completeQualification(
   return callBackend('/api/qualification/complete', {
     method: 'POST',
     body: {
+      projectId: taskContext.projectId,
       projectCode: taskContext.projectCode,
       workflowId: taskContext.workflowId,
+      taskId: taskContext.taskId,
       taskUid,
       fileId: taskContext.fileId,
+      jobId: taskContext.jobId,
       pagesWithErrors,
       outcome,
       flowbackReason,

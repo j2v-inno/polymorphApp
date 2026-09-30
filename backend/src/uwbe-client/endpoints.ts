@@ -91,6 +91,14 @@ export interface UpdateFileStatusParams {
   onholdReason?: string;
   nextTask?: string;
   /**
+   * The task's output file. uw-be refuses to complete a task with
+   * `user_should_upload_output = 1` without one ("File data is required to
+   * complete this task."), and it is also what the next task finds as its
+   * input — uw-be only looks in the immediately previous task's output.
+   * Sending it switches the request to multipart.
+   */
+  fileData?: { bytes: Buffer; fileName: string; contentType?: string };
+  /**
    * uw-be defaults this to 1 (system) when omitted — a real gap: the file's
    * open file_task_users session belongs to whoever actually claimed it
    * (uw-fe's real "Assign" action claims as the logged-in user), and the
@@ -108,20 +116,32 @@ export function updateFileStatus(params: UpdateFileStatusParams): Promise<UwbeRe
   if (params.fileStatus === 'O' && !params.onholdReason) {
     throw new Error('onholdReason is required when fileStatus is "O" (FLUID_APP_DEV_CONTEXT.md §6.1)');
   }
-  return callUwbe<null>('update-file-status', {
-    method: 'POST',
-    body: {
-      project_code: params.projectCode,
-      task_uid: params.taskUid,
-      file_id: params.fileId,
-      previous_file_status: params.previousFileStatus,
-      file_status: params.fileStatus,
-      meta_data: params.metaData,
-      onhold_reason: params.onholdReason,
-      next_task: params.nextTask,
-      user_id: params.userId,
-    },
-  });
+  const fields = {
+    project_code: params.projectCode,
+    task_uid: params.taskUid,
+    file_id: params.fileId,
+    previous_file_status: params.previousFileStatus,
+    file_status: params.fileStatus,
+    meta_data: params.metaData,
+    onhold_reason: params.onholdReason,
+    next_task: params.nextTask,
+    user_id: params.userId,
+  };
+
+  if (!params.fileData) {
+    return callUwbe<null>('update-file-status', { method: 'POST', body: fields });
+  }
+
+  // Multipart can't nest objects, so meta_data goes as a JSON string — which
+  // update_file_status json_decodes when it arrives as one.
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined) continue;
+    formData.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+  }
+  const { bytes, fileName, contentType } = params.fileData;
+  formData.append('file_data', new Blob([bytes], { type: contentType ?? 'application/octet-stream' }), fileName);
+  return callUwbe<null>('update-file-status', { method: 'POST', formData });
 }
 
 // ---------------------------------------------------------------------------

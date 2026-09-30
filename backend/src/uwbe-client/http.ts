@@ -6,6 +6,8 @@ interface CallOptions {
   method?: 'GET' | 'POST' | 'PUT';
   query?: Record<string, string | number | undefined>;
   body?: Record<string, unknown>;
+  /** Sent as multipart instead of `body` — for endpoints that take a file field. */
+  formData?: FormData;
 }
 
 /** §4 tenancy rule: a missing/wrong project_code fails silently downstream. Fail loudly here instead. */
@@ -32,8 +34,11 @@ export async function callUwbe<T>(endpoint: string, opts: CallOptions = {}): Pro
   const url = buildUrl(endpoint, opts.query);
 
   const headers: Record<string, string> = { 'api-token': config.uwbe.apiToken };
-  let body: string | undefined;
-  if (opts.body !== undefined && method !== 'GET') {
+  let body: string | FormData | undefined;
+  if (opts.formData && method !== 'GET') {
+    // fetch sets the multipart Content-Type (with its boundary) itself.
+    body = opts.formData;
+  } else if (opts.body !== undefined && method !== 'GET') {
     headers['Content-Type'] = 'application/json';
     body = JSON.stringify(opts.body);
   }

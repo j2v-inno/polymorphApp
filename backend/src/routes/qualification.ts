@@ -163,11 +163,14 @@ qualificationRouter.post('/metadata', async (req, res) => {
 });
 
 interface CompleteBody {
+  projectId: number;
   projectCode: string;
   /** Plumbing only — kept so payloads mirror the launch URL. */
   workflowId?: number;
+  taskId: number;
   taskUid: string;
   fileId: number;
+  jobId?: number;
   pagesWithErrors: number[];
   outcome: 'clean' | 'rework' | 'archive';
   flowbackReason?: string;
@@ -210,7 +213,36 @@ qualificationRouter.post('/complete', async (req, res) => {
     return;
   }
 
-  // Clean. pages_with_errors travels through meta_data, merged *with* the audit
+  // Clean. The reviewed file goes back as this task's output: uw-be refuses
+  // completion without one on tasks with user_should_upload_output = 1, and
+  // the next task only looks for its input in THIS task's output. A review
+  // doesn't change the file, so it's the same bytes, fetched server-side
+  // from the file's own download URL.
+  const active = await resolveActiveFile({
+    projectId: body.projectId,
+    projectCode: body.projectCode,
+    taskId: body.taskId,
+    taskUid: body.taskUid,
+    fileId: body.fileId,
+    jobId: body.jobId,
+  });
+  const downloadUrl = active.data?.input_download_url;
+  if (!active.ok || !downloadUrl) {
+    res.status(502).json({ ok: false, error: active.error ?? 'could not resolve this file\'s download URL to send as the task output' });
+    return;
+  }
+  const download = await fetch(downloadUrl);
+  if (!download.ok) {
+    res.status(502).json({ ok: false, error: `failed to fetch the reviewed file: HTTP ${download.status}` });
+    return;
+  }
+  const fileData = {
+    bytes: Buffer.from(await download.arrayBuffer()),
+    fileName: String(active.data?.file_name ?? `file-${body.fileId}`),
+    contentType: download.headers.get('content-type') ?? undefined,
+  };
+
+  // pages_with_errors travels through meta_data, merged *with* the audit
   // trail only if projects.track_metadata_change=true on this project — unconfirmed
   // (§13 #3). If it's false, this write still succeeds but silently isn't audited.
   const result = await updateFileStatus({
@@ -222,6 +254,7 @@ qualificationRouter.post('/complete', async (req, res) => {
     metaData: body.pagesWithErrors.length ? { pages_with_errors: body.pagesWithErrors } : undefined,
     nextTask: body.nextTask,
     userId: body.userId,
+    fileData,
   });
   if (!result.ok) {
     res.status(502).json({ ok: false, error: result.error });
