@@ -96,6 +96,9 @@ export function registerAndUploadAcquisition(
   // jobId/batchId don't exist yet for a fresh "register new file" launch (no file yet) —
   // taskId + a timestamp is unique enough for this identifier's purpose.
   formData.append('fileUniqueIdentifier', `${taskContext.taskId}-${file.name}-${Date.now()}`);
+  // The operator, so the registration is theirs: Orion's register page lists
+  // what an operator registered by the file_task_users row this creates.
+  if (Number.isFinite(taskContext.userId)) formData.append('userId', String(taskContext.userId));
   return callBackend<AcquisitionResult>('/api/acquisition/register-and-upload', { method: 'POST', formData });
 }
 
