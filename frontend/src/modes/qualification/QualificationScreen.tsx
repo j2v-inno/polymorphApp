@@ -101,16 +101,16 @@ export function QualificationScreen({ taskContext }: Props) {
   // Fetches the transformed document's raw text via the backend proxy
   // (avoids the browser hitting CORS on the presigned download URL directly).
   useEffect(() => {
-    if (!context || !contentFormat || !context.input_download_url) return;
+    if (!context || !contentFormat || !context.input_download_url || !taskContext.workflowCode) return;
     setContentError(null);
-    fetchQualificationContent(context.input_download_url).then((result) => {
+    fetchQualificationContent(taskContext, taskContext.workflowCode).then((result) => {
       if (!result.ok || !result.data) {
         setContentError(result.error ?? 'failed to load content');
         return;
       }
       setRawContent(result.data.content);
     });
-  }, [context, contentFormat]);
+  }, [context, contentFormat, taskContext]);
 
   function toggleError(page: number) {
     setErrorPages((prev) => {

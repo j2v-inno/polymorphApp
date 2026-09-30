@@ -553,9 +553,12 @@ posture the rest of this app already takes toward things like archiving (§13 #2
   on, for the same reason). A real fast-follow, not done here.
 - **Qualification's viewer**: `meta_data.content_format` (`'xml'|'json'`, written by
   this task) switches `QualificationScreen.tsx` from its PDF `<iframe>`/page-nav to a
-  `<pre className="fluid-content-viewer">` showing the raw text, fetched via a new
-  `GET /api/qualification/content-proxy?url=` (server-side fetch, same
-  CORS-avoidance technique `batch-split.ts` already uses for parent bytes). No page
+  `<pre className="fluid-content-viewer">` showing the raw text, fetched via
+  `GET /api/qualification/content` (server-side fetch, same CORS-avoidance
+  technique `batch-split.ts` already uses for parent bytes). It takes the same
+  task-context query as `/context` and resolves the file's download URL itself —
+  it replaced `/content-proxy?url=`, which fetched any caller-supplied URL (an
+  SSRF hole). No page
   concept for structured content, so the per-page error-flagging UI is skipped in
   that branch and `pagesWithErrors` is always sent empty — the 3-way clean/rework/
   archive outcome buttons are unchanged.

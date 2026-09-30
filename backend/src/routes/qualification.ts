@@ -1,7 +1,19 @@
-import { Router } from 'express';
-import { flowBackFileTask, getAllTasks, resolveActiveFile, updateFileMetaData, updateFileStatus } from '../uwbe-client/endpoints.js';
+import { Router, type Request, type Response } from 'express';
+import {
+  flowBackFileTask,
+  getAllTasks,
+  resolveActiveFile,
+  updateFileMetaData,
+  updateFileStatus,
+  type ActiveFileContext,
+} from '../uwbe-client/endpoints.js';
 
 export const qualificationRouter = Router();
+
+interface QualificationFile {
+  file: ActiveFileContext;
+  taskUid: string;
+}
 
 /**
  * §6.2 step 1 — resolveActiveFile handles both "file already claimed by
@@ -9,8 +21,12 @@ export const qualificationRouter = Router();
  * claimed" (see its own doc comment). Needs task_uid, which TaskContext
  * doesn't carry directly, so it's resolved via get-all-tasks + matching on
  * taskId (same pattern as batch-split.ts/download.ts).
+ *
+ * Shared by /context and /content, so both resolve the file the same way from
+ * the same task-context query — writes the error response itself and returns
+ * null when resolution fails.
  */
-qualificationRouter.get('/context', async (req, res) => {
+async function resolveQualificationFile(req: Request, res: Response): Promise<QualificationFile | null> {
   const projectId = Number(req.query.projectId);
   const projectCode = String(req.query.projectCode ?? '');
   const workflowCode = String(req.query.workflowCode ?? '');
@@ -20,40 +36,55 @@ qualificationRouter.get('/context', async (req, res) => {
 
   if (!projectId || !projectCode || !workflowCode || !taskId || !fileId) {
     res.status(400).json({ ok: false, error: 'projectId, projectCode, workflowCode, taskId, and fileId are required' });
-    return;
+    return null;
   }
 
   const taskGraph = await getAllTasks({ projectCode, workflowCode });
   if (!taskGraph.ok || !taskGraph.data) {
     res.status(502).json({ ok: false, error: taskGraph.error ?? 'get-all-tasks failed' });
-    return;
+    return null;
   }
   const currentTask = taskGraph.data.find((t) => t.id === taskId);
   if (!currentTask) {
     res.status(502).json({ ok: false, error: `no task with id ${taskId} found in the workflow graph` });
-    return;
+    return null;
   }
 
   const result = await resolveActiveFile({ projectId, projectCode, taskId, taskUid: currentTask.task_uid, fileId, jobId });
   if (!result.ok || !result.data) {
     res.status(404).json({ ok: false, error: result.error });
-    return;
+    return null;
   }
-  res.json({ ok: true, data: { ...result.data, task_uid: currentTask.task_uid } });
+  return { file: result.data, taskUid: currentTask.task_uid };
+}
+
+qualificationRouter.get('/context', async (req, res) => {
+  const resolved = await resolveQualificationFile(req, res);
+  if (!resolved) return;
+  res.json({ ok: true, data: { ...resolved.file, task_uid: resolved.taskUid } });
 });
 
 /**
- * Server-side fetch of a file's own (already-authenticated, presigned)
- * input_download_url — avoids the browser hitting CORS on the S3/MinIO
- * signed URL directly, same technique batch-split.ts already uses to fetch a
- * parent file's bytes. Used by the qualification screen's structured-content
- * viewer (content_format: 'xml'|'json' in meta_data) to display transformed
- * output as text instead of a PDF iframe.
+ * The raw text of the file's own input_download_url, fetched server-side —
+ * avoids the browser hitting CORS on the S3/MinIO presigned URL directly, same
+ * technique batch-split.ts already uses to fetch a parent file's bytes. Used by
+ * the qualification screen's structured-content viewer (content_format:
+ * 'xml'|'json' in meta_data) to display transformed output as text instead of
+ * a PDF iframe.
+ *
+ * Takes the same task-context query as /context and resolves the URL itself,
+ * rather than accepting one from the caller: this used to be
+ * /content-proxy?url=, which fetched any URL it was given and returned the
+ * body — a server-side request forgery hole reaching anything this backend can
+ * reach, including the box's own services when EXTRA_HOST_ENTRY is set.
  */
-qualificationRouter.get('/content-proxy', async (req, res) => {
-  const url = String(req.query.url ?? '');
-  if (!/^https?:\/\//i.test(url)) {
-    res.status(400).json({ ok: false, error: 'url must be an http(s) URL' });
+qualificationRouter.get('/content', async (req, res) => {
+  const resolved = await resolveQualificationFile(req, res);
+  if (!resolved) return;
+
+  const url = resolved.file.input_download_url;
+  if (!url) {
+    res.status(404).json({ ok: false, error: 'this file has no input_download_url to fetch content from' });
     return;
   }
 

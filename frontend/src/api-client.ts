@@ -271,15 +271,24 @@ export function completeQualification(
 }
 
 /**
- * Fetches the raw text of a file's own input_download_url via the backend
- * (avoids the browser hitting CORS on the presigned S3/MinIO URL directly).
- * Used for the structured-content viewer when meta_data.content_format is
- * 'xml'|'json' instead of the PDF iframe.
+ * Fetches the raw text of this task's file via the backend (avoids the browser
+ * hitting CORS on the presigned S3/MinIO URL directly). Used for the
+ * structured-content viewer when meta_data.content_format is 'xml'|'json'
+ * instead of the PDF iframe. Sends the task context, not a URL — the backend
+ * resolves the file's download URL itself, so a caller can't point it anywhere
+ * else.
  */
-export function fetchQualificationContent(url: string): Promise<BackendResult<{ content: string }>> {
-  return callBackend<{ content: string }>('/api/qualification/content-proxy', {
+export function fetchQualificationContent(taskContext: TaskContext, workflowCode: string): Promise<BackendResult<{ content: string }>> {
+  return callBackend<{ content: string }>('/api/qualification/content', {
     method: 'GET',
-    query: { url },
+    query: {
+      projectId: taskContext.projectId,
+      projectCode: taskContext.projectCode,
+      workflowCode,
+      taskId: taskContext.taskId,
+      fileId: taskContext.fileId,
+      jobId: taskContext.jobId,
+    },
   });
 }
 
