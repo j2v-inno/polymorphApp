@@ -10,6 +10,15 @@ module.exports = (webpackConfigEnv, argv) => {
     argv,
   });
 
+  // The defaults mark react, react-dom, react-dom/client and single-spa as
+  // externals, expecting the host's import map to supply them. Orion has no
+  // import map and does not share its React (its Next.js build bundles its own),
+  // so a bare `import "react"` in this bundle fails to resolve when Orion
+  // imports it. Bundle everything instead — one self-contained ES module that
+  // any host can import() by URL. Assigned rather than merged: webpack-merge
+  // would append to the defaults' array, not replace it.
+  defaultConfig.externals = [];
+
   return merge(defaultConfig, {
     // webpack-config-single-spa-react hardcodes entry to src/<orgName>-<projectName>;
     // FLUID_APP_DEV_CONTEXT.md §9.1/§11 names the entry file single-spa-entry.tsx, so
