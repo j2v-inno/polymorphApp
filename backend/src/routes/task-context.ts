@@ -110,11 +110,9 @@ taskContextRouter.post('/resolve', async (req, res) => {
     return;
   }
 
-  if (!pointer.jobId) {
-    res.status(400).json({ ok: false, error: 'jobId is required when fileId is present' });
-    return;
-  }
-
+  // jobId is optional: uw-be scopes the lookup by file_id alone, and Orion's
+  // mount contract (spa) carries file_id but no job_id — the job is derived
+  // from the file here, the same way the no-fileId branch above derives it.
   const result = await getTaskOngoingFile({
     projectId: pointer.projectId,
     taskId: pointer.taskId,
@@ -122,10 +120,23 @@ taskContextRouter.post('/resolve', async (req, res) => {
     jobId: pointer.jobId,
   });
 
-  if (!result.ok) {
+  if (!result.ok || !result.data) {
     res.status(404).json({ ok: false, error: result.error ?? 'task/file not found for the supplied context' });
     return;
   }
 
-  res.json({ ok: true, data: { ...pointer, taskCode, taskUid, ...result.data } });
+  res.json({
+    ok: true,
+    data: {
+      ...pointer,
+      taskCode,
+      taskUid,
+      jobId: (result.data.job_id as number | undefined) ?? pointer.jobId,
+      batchId: (result.data.batch_id as number | undefined) ?? pointer.batchId,
+      jobName: (result.data.job_name as string | undefined) ?? pointer.jobName,
+      batchName: (result.data.batch_name as string | undefined) ?? pointer.batchName,
+      fileName: (result.data.file_name as string | undefined) ?? pointer.fileName,
+      ...result.data,
+    },
+  });
 });

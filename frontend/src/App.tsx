@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { clearApiToken, revalidateTaskContext, setApiToken } from './api-client';
 import { modeRegistry } from './mode-registry';
-import { resolveModeFromPath } from './mode-path';
 import { resolveTaskContextPointer } from './task-context';
 import { AppShell } from './components/AppShell';
 import type { CustomProps, TaskContext } from './types';
@@ -61,12 +60,10 @@ export default function App(props: CustomProps) {
     );
   }
 
-  // Standalone launches (new-tab, localhost:9100/<mode-path>?...) carry the mode
-  // in the URL path itself, set once per task in uw-be's external_app_integration
-  // config — immune to task renames and to any resolution hiccup upstream of
-  // taskCode. Parcel/single-spa mounts have no meaningful standalone path, so
-  // those fall back to the resolved taskCode as before.
-  const modeKey = resolveModeFromPath() ?? state.taskContext.taskCode ?? '';
+  // task-context.ts already chose the screen: the URL path for standalone
+  // launches, Orion's app_screen when mounted. Reading the path here would read
+  // the host's page URL under a mount.
+  const modeKey = state.taskContext.taskCode ?? '';
   const mode = modeRegistry[modeKey];
   if (!mode) {
     return (

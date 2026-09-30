@@ -31,8 +31,34 @@ export interface TaskContext {
   apiToken?: string;
 }
 
-/** Whatever single-spa passes to mount()/renderReactNode — our TaskContext fields plus single-spa's own reserved props. */
-export type CustomProps = Partial<TaskContext> & {
+/**
+ * The props Orion passes to mount() — its published task-app contract, where
+ * every context field is a string. task-context.ts adapts these into
+ * TaskContext; nothing else should read them.
+ */
+export interface OrionTaskAppProps {
+  project_id: string;
+  project_code: string;
+  workflow_id: string;
+  workflow_code: string;
+  task_id: string;
+  task_uid: string;
+  user_id: string;
+  /** Which screen to render — one of mode-path.ts's path keys, declared on the app's registry row in Orion. */
+  app_screen?: string;
+  file_id?: string;
+  file_task_id?: string;
+  file_url?: string;
+  file_name?: string;
+  file_mime?: string;
+  basePath?: string;
+  apiBaseUrl?: string;
+  onTaskComplete?: () => void;
+  onTaskProgress?: (progress: number) => void;
+}
+
+/** Whatever single-spa passes to mount()/renderReactNode — Orion's contract props plus single-spa's own reserved props. */
+export type CustomProps = Partial<OrionTaskAppProps> & {
   domElement?: HTMLElement;
   name?: string;
   [key: string]: unknown;
