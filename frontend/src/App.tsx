@@ -60,9 +60,10 @@ export default function App(props: CustomProps) {
     );
   }
 
-  // task-context.ts already chose the screen: the URL path for standalone
-  // launches, Orion's app_screen when mounted. Reading the path here would read
-  // the host's page URL under a mount.
+  // task-context.ts already chose the screen: this page's own address
+  // (?app_screen=, then the path) for standalone launches, Orion's app_screen
+  // prop when mounted. Reading the address here would read the host's page URL
+  // under a mount.
   const modeKey = state.taskContext.taskCode ?? '';
   const mode = modeRegistry[modeKey];
   if (!mode) {

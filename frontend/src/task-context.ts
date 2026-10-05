@@ -1,5 +1,5 @@
 import type { CustomProps, OrionTaskAppProps, TaskContext } from './types';
-import { resolveModeFromPath, taskCodeForScreen } from './mode-path';
+import { resolveModeFromPath, resolveModeFromQuery, taskCodeForScreen } from './mode-path';
 
 /**
  * §3.3 — detect mount mode by whether a host supplied the contract's `task_id`
@@ -67,7 +67,10 @@ function resolveFromUrl(): TaskContext {
     // taskUid, not taskCode) — it only ever selects a screen/branch, so
     // preferring the same value the path already drives is strictly more
     // consistent, not a new trust boundary.
-    taskCode: resolveModeFromPath() ?? str('task_code'),
+    // Orion's own app_screen comes first: a tab or iframe launch of a Web App
+    // puts it on the query string, and it is the task's choice of screen, where
+    // the path is only whatever the app's one registered page address ends in.
+    taskCode: resolveModeFromQuery() ?? resolveModeFromPath() ?? str('task_code'),
     taskId: num('task_id') ?? NaN,
     // Optional: absent for "register a new file" launches — there's no file yet.
     fileId: num('file_id'),
