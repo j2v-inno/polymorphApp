@@ -55,6 +55,8 @@ export interface OrionTaskAppProps {
   apiBaseUrl?: string;
   onTaskComplete?: () => void;
   onTaskProgress?: (progress: number) => void;
+  /** Register page only: asks Orion to re-read what this operator registered. Call through host.ts. */
+  onFilesRegistered?: (fileIds: string[]) => void;
 }
 
 /** Whatever single-spa passes to mount()/renderReactNode — Orion's contract props plus single-spa's own reserved props. */

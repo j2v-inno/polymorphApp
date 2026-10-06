@@ -9,6 +9,7 @@ import {
   type QualificationContext,
   type QualificationOutcome,
 } from '../../api-client';
+import { notifyTaskComplete } from '../../host';
 
 interface Props {
   taskContext: TaskContext;
@@ -168,6 +169,8 @@ export function QualificationScreen({ taskContext }: Props) {
       setSubmitError(result.error ?? `${outcome} failed`);
       return;
     }
+    // Clean or rework, the file has left this operator's hands.
+    notifyTaskComplete();
     setSubmitted(outcome);
   }
 

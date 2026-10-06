@@ -15,10 +15,15 @@ import { resolveModeFromPath, resolveModeFromQuery, taskCodeForScreen } from './
  * resolves taskCode when missing) before rendering a mode.
  */
 export function resolveTaskContextPointer(customProps?: CustomProps): TaskContext {
-  if (customProps && typeof customProps.task_id === 'string' && customProps.task_id) {
+  if (isMountedByHost(customProps)) {
     return fromOrionProps(customProps as OrionTaskAppProps);
   }
   return resolveFromUrl();
+}
+
+/** The rule above, shared with host.ts: a host mounted us iff it passed the contract's `task_id`. */
+export function isMountedByHost(customProps?: CustomProps): customProps is CustomProps {
+  return !!customProps && typeof customProps.task_id === 'string' && !!customProps.task_id;
 }
 
 /**

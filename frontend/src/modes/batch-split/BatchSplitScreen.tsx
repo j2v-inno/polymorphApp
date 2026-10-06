@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TaskContext } from '../../types';
 import { splitBatch, getBatchSplitStatus, type BatchSplitChild, type ChapterDetectionMethod, type SplitMethod } from '../../api-client';
+import { notifyTaskComplete } from '../../host';
 
 interface Props {
   taskContext: TaskContext;
@@ -80,6 +81,8 @@ export function BatchSplitScreen({ taskContext }: Props) {
       setProgressPhase(null);
       return;
     }
+    // The parent is completed by now; its chapters are other tasks' files.
+    notifyTaskComplete();
     setChildren(result.data.children);
     setUsedFallback(result.data.usedFallback);
     setDetectionMethod(result.data.detectionMethod);

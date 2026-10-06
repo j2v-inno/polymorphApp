@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { clearApiToken, revalidateTaskContext, setApiToken } from './api-client';
+import { connectHost, disconnectHost } from './host';
 import { modeRegistry } from './mode-registry';
 import { resolveTaskContextPointer } from './task-context';
 import { AppShell } from './components/AppShell';
@@ -17,6 +18,7 @@ export default function App(props: CustomProps) {
   useEffect(() => {
     const pointer = resolveTaskContextPointer(props);
     setApiToken(pointer.apiToken);
+    connectHost(props);
 
     let cancelled = false;
     revalidateTaskContext(pointer).then((result) => {
@@ -35,6 +37,7 @@ export default function App(props: CustomProps) {
       // §10 unmount hygiene — the host may mount a different task/user context
       // into this same page shortly after.
       clearApiToken();
+      disconnectHost();
     };
     // Deliberately runs once per mount, not on every props identity change —
     // Orion remounts this Parcel (fresh bootstrap/mount) per task rather than

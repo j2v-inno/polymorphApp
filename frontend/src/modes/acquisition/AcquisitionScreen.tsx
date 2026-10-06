@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { TaskContext } from '../../types';
 import { registerAndUploadAcquisition, type AcquisitionResult } from '../../api-client';
+import { notifyFilesRegistered } from '../../host';
 
 interface Props {
   taskContext: TaskContext;
@@ -26,6 +27,7 @@ export function AcquisitionScreen({ taskContext }: Props) {
       setStatus({ kind: 'error', message: result.error ?? 'upload failed' });
       return;
     }
+    notifyFilesRegistered([result.data.fileId]);
     setStatus({ kind: 'done', result: result.data });
   }
 
