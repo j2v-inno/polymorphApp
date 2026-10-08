@@ -17,13 +17,15 @@ export function createApp() {
   app.use(
     cors({
       origin: config.allowedOrigins,
+      // The app token arrives as Authorization: Bearer (middleware/auth.ts).
+      allowedHeaders: ['Authorization', 'Content-Type'],
     }),
   );
   app.use(express.json());
 
   app.get('/health', (_req, res) => res.json({ ok: true }));
 
-  // Every mutating/data call re-validates auth (§10); health check is exempt.
+  // Every data call checks its app token with Orion; health check is exempt.
   app.use('/api', requireAuth);
   app.use('/api/task-context', taskContextRouter);
   app.use('/api/acquisition', acquisitionRouter);

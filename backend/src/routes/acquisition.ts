@@ -31,7 +31,10 @@ acquisitionRouter.post('/register-and-upload', upload.single('file'), async (req
   // Orion's register page reads is never the operator's. Completion below must
   // send the same user, or its session guard misses and uw-be answers
   // "File is already updated." (see registerJobBatchFile's userId comment).
-  const userId = req.body.userId ? Number(req.body.userId) : undefined;
+  // The operator is the one Orion confirmed for this call's app token, not the
+  // form's own userId field: this body is multipart, so requireAuth could not
+  // compare the two before multer parsed it.
+  const userId = req.orion?.actor.user_id;
 
   // 1. Register
   const registerResult = await registerJobBatchFile({

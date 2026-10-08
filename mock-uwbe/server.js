@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import express from 'express';
 
 // Fake uw-be for local testing only. Canned envelopes for the 8 endpoints
@@ -206,6 +207,94 @@ app.get('/get-file-task-output', (req, res) => {
       },
     }),
   );
+});
+
+// --- Orion's app token: a stand-in for the issue and the exchange ------------
+//
+// Real Orion hands its page an app token (a random code), and an app's server
+// exchanges it at GET /api/v1/webapp/contract/{ct} with its API token. This is
+// that exchange with canned answers, so a server's token check can be tried
+// without an Orion: accept the operator's own token, refuse one Orion does not
+// know, one that expired, one issued for another Web App, and one whose
+// operator no longer has the file.
+//
+// Every contract here says issuer "Orion self-test". A server set to trust one
+// Orion (transapp: ORION_ISSUER) must refuse all of them: that is the proof a
+// production server cannot be talked round by a test token.
+
+const SELF_TEST_ISSUER = 'Orion self-test';
+/** @type {Map<string, { contract: Record<string, unknown>, expiresAt: number, held: boolean }>} */
+const contractsByCode = new Map();
+
+const refuse = (res, status, code, message) =>
+  res.status(status).json({ success: false, code: status, message, error: { code, message, retryable: false } });
+
+// Stands in for Orion's own page asking for a token: Orion checks the
+// operator's session there, and this checks nothing. Body, all optional:
+// { user_id, login_id, display_name, project_id, project_code, task_id,
+//   file_id (null for the register page), web_app, ttl (seconds) }.
+app.post('/mock/app-token', (req, res) => {
+  const b = req.body ?? {};
+  const ttl = Number(b.ttl ?? 600);
+  const fileId = b.file_id === undefined ? 1001 : b.file_id;
+  const taskId = Number(b.task_id ?? 204);
+  const projectId = Number(b.project_id ?? 334);
+  const token = randomBytes(32).toString('hex');
+  const expiresAt = Date.now() + ttl * 1000;
+
+  contractsByCode.set(token, {
+    expiresAt,
+    held: false,
+    contract: {
+      contract_version: '1.0',
+      issuer: SELF_TEST_ISSUER,
+      expires_at: new Date(expiresAt).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      organization_id: null,
+      web_app: { code: b.web_app ?? 'transapp' },
+      subject:
+        fileId === null
+          ? { type: 'task', id: taskId, project_id: projectId }
+          : { type: 'file_task', id: 900000 + Number(fileId), project_id: projectId },
+      context: {
+        project: { id: projectId, code: b.project_code ?? 'MOCK' },
+        workflow: { id: 19, code: 'MAINFLOW' },
+        task: { id: taskId, code: 'QUALIFICATION', name: 'Qualification' },
+        file: fileId === null ? null : { id: Number(fileId) },
+      },
+      actor: {
+        user_id: Number(b.user_id ?? 1),
+        login_id: b.login_id ?? 'selftest',
+        display_name: b.display_name ?? 'Self Test',
+      },
+    },
+  });
+
+  res.json(respond({ token, expires_in: ttl }, 'App token issued'));
+});
+
+// Stands in for the operator putting the file on hold, completing it or
+// sending it back: the token stays known, and the exchange answers 410.
+app.post('/mock/app-token/:ct/hold', (req, res) => {
+  const kept = contractsByCode.get(req.params.ct);
+  if (!kept) return refuse(res, 404, 'unknown_code', 'The mock never issued this code.');
+  kept.held = true;
+  res.json(respond(null, 'Held'));
+});
+
+// The exchange itself, at Orion's own address under UWBE_BASE_URL.
+app.get('/v1/webapp/contract/:ct', (req, res) => {
+  if (!req.header('api-token')) {
+    return res.status(401).json({ success: false, code: 401, message: 'Unauthorized', data: null });
+  }
+  const kept = contractsByCode.get(req.params.ct);
+  if (!kept || kept.expiresAt <= Date.now()) {
+    contractsByCode.delete(req.params.ct);
+    return refuse(res, 404, 'unknown_code', 'Orion does not know this code. It was never issued, or it has expired.');
+  }
+  if (kept.held) {
+    return refuse(res, 410, 'file_not_yours', 'The operator no longer has this file in process at this task.');
+  }
+  res.set('Cache-Control', 'no-store').json(respond(kept.contract, 'Web App contract'));
 });
 
 app.listen(PORT, () => {

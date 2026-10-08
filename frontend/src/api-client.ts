@@ -1,17 +1,20 @@
 import { BACKEND_URL } from './config';
+import { getAppToken, NoAppTokenError } from './host';
 import type { TaskContext } from './types';
 
 /** Calls the Fluid App Backend only — this app never talks to uw-be from the browser (§2). */
 
-let apiToken: string | undefined;
+// What the operator reads when Orion issues no app token. Nothing is sent
+// without one and nothing is retried: they act on it, or reopen the task.
+const NO_APP_TOKEN: Record<string, string> = {
+  file_not_yours: 'You no longer have this file in process in Orion. Reopen it from Orion to carry on.',
+  cannot_register: 'You can no longer register files at this task in Orion.',
+  app_inactive: 'This app has been switched off in Orion. Ask your Orion admin.',
+};
 
-export function setApiToken(token: string | undefined): void {
-  apiToken = token;
-}
-
-/** §10 unmount hygiene — call from single-spa-entry's unmount lifecycle. */
-export function clearApiToken(): void {
-  apiToken = undefined;
+function noAppTokenMessage(err: unknown): string {
+  const reason = err instanceof NoAppTokenError ? err.reason : 'unavailable';
+  return NO_APP_TOKEN[reason] ?? `Orion did not confirm who you are (${reason}). Open this task from Orion and try again.`;
 }
 
 export interface BackendResult<T> {
@@ -44,8 +47,15 @@ async function callBackend<T>(path: string, opts: RequestOptions = {}): Promise<
     }
   }
 
-  const headers: Record<string, string> = {};
-  if (apiToken) headers['x-fluid-parcel-token'] = apiToken;
+  // Asked before every request and never kept here: Orion's page hands back
+  // the one it holds, and a fresh one when that is about to expire.
+  let appToken: string;
+  try {
+    appToken = await getAppToken();
+  } catch (err) {
+    return { ok: false, data: null, error: noAppTokenMessage(err) };
+  }
+  const headers: Record<string, string> = { Authorization: `Bearer ${appToken}` };
 
   let body: BodyInit | undefined;
   if (opts.formData) {

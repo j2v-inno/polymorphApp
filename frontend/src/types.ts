@@ -27,8 +27,6 @@ export interface TaskContext {
   jobName?: string;
   batchName?: string;
   fileName?: string;
-  /** Parcel mode only (§10) — never present in the standalone-mode URL. */
-  apiToken?: string;
 }
 
 /**
@@ -57,6 +55,12 @@ export interface OrionTaskAppProps {
   onTaskProgress?: (progress: number) => void;
   /** Register page only: asks Orion to re-read what this operator registered. Call through host.ts. */
   onFilesRegistered?: (fileIds: string[]) => void;
+  /**
+   * Resolves to the app token this app's server needs on every call; rejects
+   * when Orion issues none. Call through host.ts, before each request: Orion
+   * keeps one ready and renews it.
+   */
+  getAppToken?: () => Promise<string>;
 }
 
 /** Whatever single-spa passes to mount()/renderReactNode — Orion's contract props plus single-spa's own reserved props. */

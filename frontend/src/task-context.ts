@@ -96,7 +96,7 @@ function resolveFromUrl(): TaskContext {
     jobName: str('job_name'),
     batchName: str('batch_name'),
     fileName: str('file_name'),
-    // §10 — no long-lived auth token is ever placed in the standalone-mode URL.
-    // apiToken intentionally stays undefined; standalone auth is an open blocker (§13 #6).
+    // No token is ever read from the URL: the app token comes from Orion's
+    // page, through host.ts.
   };
 }

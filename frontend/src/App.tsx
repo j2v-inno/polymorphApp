@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { clearApiToken, revalidateTaskContext, setApiToken } from './api-client';
+import { revalidateTaskContext } from './api-client';
 import { connectHost, disconnectHost } from './host';
 import { modeRegistry } from './mode-registry';
 import { resolveTaskContextPointer } from './task-context';
@@ -17,7 +17,7 @@ export default function App(props: CustomProps) {
 
   useEffect(() => {
     const pointer = resolveTaskContextPointer(props);
-    setApiToken(pointer.apiToken);
+    // Before the first request: api-client gets its app token through the host.
     connectHost(props);
 
     let cancelled = false;
@@ -28,15 +28,15 @@ export default function App(props: CustomProps) {
         return;
       }
       // §3.3 — the backend's re-fetched data is authoritative; the pointer only
-      // fills in fields get-task-ongoing-file doesn't echo back (e.g. apiToken).
+      // fills in fields get-task-ongoing-file doesn't echo back.
       setState({ status: 'ready', taskContext: { ...pointer, ...result.data } });
     });
 
     return () => {
       cancelled = true;
       // §10 unmount hygiene — the host may mount a different task/user context
-      // into this same page shortly after.
-      clearApiToken();
+      // into this same page shortly after. Disconnecting also drops the way
+      // to an app token, so a late call cannot act as the previous operator.
       disconnectHost();
     };
     // Deliberately runs once per mount, not on every props identity change —

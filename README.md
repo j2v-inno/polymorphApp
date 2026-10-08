@@ -36,7 +36,13 @@ pnpm dev:frontend    # http://localhost:9100 — self-mounting standalone dev ha
 ```
 
 Then either drive the frontend directly (see below) or hit the backend with curl to
-walk the whole pipeline against a real PDF, exactly as the frontend would:
+walk the whole pipeline against a real PDF, exactly as the frontend would.
+
+**Every `/api` call needs an app token**, as `Authorization: Bearer`. Under Orion
+the screen gets it from Orion's page. Against the mock, ask the mock for one, for
+the task and file the call is about, and add `-H "Authorization: Bearer $TOKEN"` to
+each curl below (see "Trying the token check against the mock"). The standalone
+frontend harness has no Orion page beside it, so its calls answer `401`.
 
 ```bash
 # 1. acquisition — register, gate-check, upload, complete
@@ -76,6 +82,41 @@ the `api-token` header or enforce `project_code` tenancy — it exists to exerci
 wiring, not to model uw-be's actual behavior/bugs (§7). Edit
 `get-task-ongoing-file`'s `meta_data.pages_with_errors` in `server.js` to test the
 manual-fix routing path in step 3.
+
+### Trying the token check against the mock
+
+The mock stands in for the two Orion calls behind the app token, so the backend's
+check (`backend/src/middleware/auth.ts`) can be tried with no Orion. It is not a
+self-test page: nothing here fails a screen that never asks for a token.
+
+```bash
+# Stands in for Orion's page: a token for operator 1, on file 1001 at task 204.
+# Optional fields: user_id, task_id, file_id (null = register page), project_id,
+# web_app, ttl (seconds).
+TOKEN=$(curl -s -X POST http://localhost:4200/mock/app-token -H "Content-Type: application/json" \
+  -d '{"task_id":204,"file_id":1001}' | node -pe 'JSON.parse(require("fs").readFileSync(0)).data.token')
+
+# Accepted: the token's own task and file.
+curl -X POST http://localhost:4100/api/task-context/resolve -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"projectId":334,"projectCode":"MOCK","taskId":204,"fileId":1001,"taskCode":"QUALIFICATION"}'
+
+# Refused, each for its own reason:
+#   no Authorization header                         -> 401
+#   a made-up token                                 -> 401 (Orion does not know it)
+#   a token made with "ttl":1, a second later       -> 401 (expired)
+#   a token made with "web_app":"some-other-app"    -> 403
+#   the good token with another taskId or fileId    -> 403
+#   after POST /mock/app-token/$TOKEN/hold          -> 401 for a token not yet seen
+```
+
+The backend keeps Orion's answer until the token expires, so a hold only shows on
+a token it has not checked before.
+
+Every contract the mock answers names its issuer as `Orion self-test`. Start the
+backend with `ORION_ISSUER` set to a real Orion's address and it refuses all of
+them. **A real deployment always sets `ORION_ISSUER`**, so no test token can ever
+stand in for Orion's.
 
 ### Driving the frontend in a browser instead of curl
 
@@ -396,8 +437,8 @@ guessing silently:
 | Qualification PDF preview + custom metadata editor | Implemented — native browser `<iframe>` preview (`input_download_url#page=N`) and a free-form key/value editor over `update-file-meta-data`, both additions beyond §6.2's original scope |
 | `/transformation` — PDF text → structured XML/JSON | Implemented — see "Transformation" below. **Deliberately reverses FLUID_APP_DEV_CONTEXT.md §1/§6.4/§9.2/§13#5**, which all state RAG transformation is owned by a separate app entirely, not this one. Brought in-house per direct user decision (2026-08-15) — flagged here explicitly rather than silently overriding the doc's stated scope, same as every other deviation in this table |
 | `/download` link resolution (§6.4) | Implemented for a known set of file IDs. How this screen discovers *all* sibling split-file IDs from one launch context isn't specified in §6 — see the TODO in `frontend/src/modes/download/DownloadScreen.tsx` |
-| Parcel-mode auth (§10) | Backend checks token *presence* (`x-fluid-parcel-token`), not validity — the validation mechanism isn't specified upstream |
-| Standalone-mode auth (§13 #6) | Not implemented — backend returns `501` unless `ALLOW_UNAUTHENTICATED_STANDALONE=true` (local dev only) |
+| Auth when Orion mounts or frames the app | Done. The screen asks Orion's page for an app token before every call (`getAppToken()` when mounted, `orion:get-app-token` by message in an iframe) and sends it as `Authorization: Bearer`. The backend exchanges it with Orion using `UWBE_API_TOKEN`, and refuses a token for another Web App, or a request naming another operator, task or file (`backend/src/middleware/auth.ts`) |
+| Auth in its own tab, or standalone | **Every `/api` call answers `401`.** With no Orion page beside it the app has no app token, and the `ALLOW_UNAUTHENTICATED_STANDALONE` switch is gone. It comes back when Orion puts a launch code on `tab` links. The backend's check can still be tried without Orion: see "Trying the token check against the mock" |
 
 Do not silently resolve any of the above without checking with the doc's named owner
 first — that's the whole point of flagging them inline instead of guessing.
