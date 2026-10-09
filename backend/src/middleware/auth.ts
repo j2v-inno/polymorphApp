@@ -1,19 +1,24 @@
+import { randomBytes } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { config } from '../config.js';
 
 /**
- * What Orion says an app token stands for: who the operator is, which Web
- * App the token was issued for, and which work it covers. Orion's contract
- * (`docs/api/app-token.md` in the Orion backend), trimmed to what this
- * server reads.
+ * What Orion says a code stands for: who the operator is, which Web App the
+ * code was issued for, and which work it covers. The code is an app token
+ * (Orion's page handed it to the screen) or the launch code on this app's
+ * own link when Orion opened it in a tab. Orion's contract
+ * (`docs/api/app-token.md` and `launch-code.md` in the Orion backend),
+ * trimmed to what this server reads.
  */
 export interface OrionContract {
   issuer: string;
   expires_at: string;
-  web_app: { code: string };
+  /** `screen` is the task's choice of screen, or null for the app's own start page. */
+  web_app: { code: string; screen?: string | null };
   context: {
     project: { id: number; code: string | null };
-    task: { id: number };
+    workflow?: { id: number; code: string | null };
+    task: { id: number; uid?: string };
     file: { id: number } | null;
   };
   actor: { user_id: number; login_id: string; display_name: string };
@@ -76,6 +81,65 @@ async function exchange(token: string): Promise<Checked> {
   return { ok: false, status: 502, error: `Orion refused this server's API token (HTTP ${response.status}).` };
 }
 
+/** Whether a contract is this app's, from the Orion this server trusts. */
+function distrust(contract: OrionContract): { status: number; error: string } | null {
+  if (config.orion.issuer && contract.issuer !== config.orion.issuer) {
+    return { status: 401, error: 'This app token comes from an Orion this server does not trust.' };
+  }
+  if (contract.web_app.code !== config.orion.webAppCode) {
+    return { status: 403, error: 'This app token was issued for another Web App.' };
+  }
+  return null;
+}
+
+/**
+ * This server's own sessions with tabs Orion opened. A launch code is read
+ * once, when the tab loads, and Orion never renews it; from then on the
+ * screen sends the session id made here, as its bearer.
+ *
+ * Kept in memory: a restart ends every session, and the tab starts another
+ * from its link while Orion still answers for the code.
+ */
+const tabSessions = new Map<string, { contract: OrionContract; ct: string; expiresAt: number }>();
+
+function tabSession(session: string): { contract: OrionContract; ct: string } | undefined {
+  const now = Date.now();
+  for (const [key, kept] of tabSessions) {
+    if (kept.expiresAt <= now) tabSessions.delete(key);
+  }
+  return tabSessions.get(session);
+}
+
+type Launched = { ok: true; session: string; contract: OrionContract } | { ok: false; status: number; error: string };
+
+/**
+ * Starts a tab's session from the launch code on its link. Orion is asked
+ * every time a tab arrives with only the code, so a link that has gone stale
+ * (the operator held or finished the file, or the hour ran out) opens
+ * nothing, whoever holds it. A tab that already has a session for this code
+ * (a refresh) keeps it, and Orion is not asked again.
+ */
+export async function startTabSession(ct: string, session?: string): Promise<Launched> {
+  const kept = session ? tabSession(session) : undefined;
+  if (session && kept?.ct === ct) {
+    return { ok: true, session, contract: kept.contract };
+  }
+
+  const checked = await exchange(ct);
+  if (!checked.ok) return checked;
+
+  const refused = distrust(checked.contract);
+  if (refused) return { ok: false, ...refused };
+
+  const started = randomBytes(32).toString('hex');
+  tabSessions.set(started, {
+    contract: checked.contract,
+    ct,
+    expiresAt: Date.now() + config.orion.tabSessionMinutes * 60_000,
+  });
+  return { ok: true, session: started, contract: checked.contract };
+}
+
 /** A value the request names for itself, in its query string or JSON body. */
 function named(req: Request, key: string): string | undefined {
   const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
@@ -102,13 +166,13 @@ export function mismatch(contract: OrionContract, names: { userId?: string; task
 }
 
 /**
- * Every /api call must carry the app token Orion's page handed this app's
- * screen, as `Authorization: Bearer`. This server asks Orion what it stands
- * for and acts only as that operator, on that task and file.
+ * Every /api call must carry a bearer, as `Authorization: Bearer`. Mounted
+ * or framed by Orion it is the app token Orion's page handed the screen, and
+ * this server asks Orion what it stands for. Opened in its own tab it is the
+ * session this server started from the launch code (startTabSession). Either
+ * way the server acts only as that operator, on that task and file.
  *
- * There is no way in without one. Opened in its own tab, with no Orion page
- * beside it, this app has no token yet: Orion's launch code for `tab` links
- * is not built.
+ * There is no way in without one.
  */
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const [scheme, token] = (req.header('authorization') ?? '').split(' ');
@@ -118,7 +182,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  let contract = remembered(token);
+  let contract = tabSession(token)?.contract ?? remembered(token);
   if (!contract) {
     const checked = await exchange(token);
     if (!checked.ok) {
@@ -129,12 +193,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     answers.set(token, { contract, expiresAt: Date.parse(contract.expires_at) });
   }
 
-  if (config.orion.issuer && contract.issuer !== config.orion.issuer) {
-    res.status(401).json({ ok: false, error: 'This app token comes from an Orion this server does not trust.' });
-    return;
-  }
-  if (contract.web_app.code !== config.orion.webAppCode) {
-    res.status(403).json({ ok: false, error: 'This app token was issued for another Web App.' });
+  const refused = distrust(contract);
+  if (refused) {
+    res.status(refused.status).json({ ok: false, error: refused.error });
     return;
   }
 

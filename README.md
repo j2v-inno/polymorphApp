@@ -42,7 +42,8 @@ walk the whole pipeline against a real PDF, exactly as the frontend would.
 the screen gets it from Orion's page. Against the mock, ask the mock for one, for
 the task and file the call is about, and add `-H "Authorization: Bearer $TOKEN"` to
 each curl below (see "Trying the token check against the mock"). The standalone
-frontend harness has no Orion page beside it, so its calls answer `401`.
+frontend harness has no Orion page beside it: open it with a launch code on its
+address (`?ct=`, see "Opening it in its own tab"), or its calls answer `401`.
 
 ```bash
 # 1. acquisition — register, gate-check, upload, complete
@@ -117,6 +118,35 @@ Every contract the mock answers names its issuer as `Orion self-test`. Start the
 backend with `ORION_ISSUER` set to a real Orion's address and it refuses all of
 them. **A real deployment always sets `ORION_ISSUER`**, so no test token can ever
 stand in for Orion's.
+
+### Opening it in its own tab
+
+When an Orion task opens this app in a new tab, the link carries one thing:
+`?ct=<launch code>`. Nothing about the task or the operator is on it.
+
+1. The screen posts the code to this backend once, at `POST /api/launch`.
+2. The backend exchanges it with Orion, using `UWBE_API_TOKEN`, at the same
+   address it uses for an app token (`GET v1/webapp/contract/{ct}`), and checks
+   the answer is for this Web App, from the Orion it trusts.
+3. It answers with the work Orion opened the tab for (the task, the file, the
+   operator and the screen) and a session for the tab. The screen takes its
+   screen from that answer, and sends the session as `Authorization: Bearer` on
+   every call after.
+
+Orion's code lasts an hour and is never renewed, so the backend keeps its own
+session with the tab (`TAB_SESSION_MINUTES`, 8 hours by default). The tab keeps
+the session across a reload. A link copied into another tab or browser starts
+from the code again, and Orion is asked afresh: once the operator has held or
+finished the file, it opens nothing.
+
+Against the mock, a token from `/mock/app-token` stands in for a launch code:
+
+```bash
+CT=$(curl -s -X POST http://localhost:4200/mock/app-token -H "Content-Type: application/json" \
+  -d '{"task_id":204,"file_id":1001,"screen":"qualification","ttl":3600}' \
+  | node -pe 'JSON.parse(require("fs").readFileSync(0)).data.token')
+open "http://localhost:9100/?ct=$CT"
+```
 
 ### Driving the frontend in a browser instead of curl
 
@@ -438,7 +468,8 @@ guessing silently:
 | `/transformation` — PDF text → structured XML/JSON | Implemented — see "Transformation" below. **Deliberately reverses FLUID_APP_DEV_CONTEXT.md §1/§6.4/§9.2/§13#5**, which all state RAG transformation is owned by a separate app entirely, not this one. Brought in-house per direct user decision (2026-08-15) — flagged here explicitly rather than silently overriding the doc's stated scope, same as every other deviation in this table |
 | `/download` link resolution (§6.4) | Implemented for a known set of file IDs. How this screen discovers *all* sibling split-file IDs from one launch context isn't specified in §6 — see the TODO in `frontend/src/modes/download/DownloadScreen.tsx` |
 | Auth when Orion mounts or frames the app | Done. The screen asks Orion's page for an app token before every call (`getAppToken()` when mounted, `orion:get-app-token` by message in an iframe) and sends it as `Authorization: Bearer`. The backend exchanges it with Orion using `UWBE_API_TOKEN`, and refuses a token for another Web App, or a request naming another operator, task or file (`backend/src/middleware/auth.ts`) |
-| Auth in its own tab, or standalone | **Every `/api` call answers `401`.** With no Orion page beside it the app has no app token, and the `ALLOW_UNAUTHENTICATED_STANDALONE` switch is gone. It comes back when Orion puts a launch code on `tab` links. The backend's check can still be tried without Orion: see "Trying the token check against the mock" |
+| Auth in its own tab | Done. Orion opens the tab with a launch code (`?ct=`) and nothing else on the link. The backend exchanges it with Orion once and keeps its own session with the tab; the screen takes the task, the file, the operator and its screen from that answer (`backend/src/routes/launch.ts`, "Opening it in its own tab") |
+| Standalone with no launch code | **Every `/api` call answers `401`.** There is no Orion page to ask for an app token and no code to exchange, and the `ALLOW_UNAUTHENTICATED_STANDALONE` switch is gone. This includes a link that still carries the task's fields in plain text. The backend's check can be tried without Orion: see "Trying the token check against the mock" |
 
 Do not silently resolve any of the above without checking with the doc's named owner
 first — that's the whole point of flagging them inline instead of guessing.

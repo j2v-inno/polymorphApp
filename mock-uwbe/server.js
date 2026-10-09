@@ -232,7 +232,11 @@ const refuse = (res, status, code, message) =>
 // Stands in for Orion's own page asking for a token: Orion checks the
 // operator's session there, and this checks nothing. Body, all optional:
 // { user_id, login_id, display_name, project_id, project_code, task_id,
-//   file_id (null for the register page), web_app, ttl (seconds) }.
+//   file_id (null for the register page), web_app, screen, ttl (seconds) }.
+//
+// The launch code on a `tab` link is the same kind of code, exchanged at the
+// same address: a token made here stands in for one, as ?ct=<token> on the
+// standalone page (pass "ttl": 3600 for Orion's hour, and a "screen").
 app.post('/mock/app-token', (req, res) => {
   const b = req.body ?? {};
   const ttl = Number(b.ttl ?? 600);
@@ -250,7 +254,7 @@ app.post('/mock/app-token', (req, res) => {
       issuer: SELF_TEST_ISSUER,
       expires_at: new Date(expiresAt).toISOString().replace(/\.\d{3}Z$/, 'Z'),
       organization_id: null,
-      web_app: { code: b.web_app ?? 'transapp' },
+      web_app: { code: b.web_app ?? 'transapp', screen: b.screen ?? null },
       subject:
         fileId === null
           ? { type: 'task', id: taskId, project_id: projectId }
@@ -258,7 +262,7 @@ app.post('/mock/app-token', (req, res) => {
       context: {
         project: { id: projectId, code: b.project_code ?? 'MOCK' },
         workflow: { id: 19, code: 'MAINFLOW' },
-        task: { id: taskId, code: 'QUALIFICATION', name: 'Qualification' },
+        task: { id: taskId, uid: b.task_uid ?? `mock-task-${taskId}`, code: 'QUALIFICATION', name: 'Qualification' },
         file: fileId === null ? null : { id: Number(fileId) },
       },
       actor: {

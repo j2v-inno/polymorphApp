@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { revalidateTaskContext } from './api-client';
-import { connectHost, disconnectHost } from './host';
+import { revalidateTaskContext, startFromLaunchCode } from './api-client';
+import { connectHost, disconnectHost, inOwnTab } from './host';
 import { modeRegistry } from './mode-registry';
-import { resolveTaskContextPointer } from './task-context';
+import { fromLaunch, launchCodeFromUrl, resolveTaskContextPointer } from './task-context';
 import { AppShell } from './components/AppShell';
 import type { CustomProps, TaskContext } from './types';
 import './styles.css';
@@ -16,12 +16,36 @@ export default function App(props: CustomProps) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
 
   useEffect(() => {
-    const pointer = resolveTaskContextPointer(props);
-    // Before the first request: api-client gets its app token through the host.
-    connectHost(props);
-
     let cancelled = false;
-    revalidateTaskContext(pointer).then((result) => {
+
+    /**
+     * Where the work comes from. Opened by Orion in a tab of its own, the
+     * link carries only a launch code: this app's server exchanges it with
+     * Orion and answers with the task, the file, the operator and the screen,
+     * and with the session every later call is made under. Mounted or framed,
+     * it is the props or the address, and the bearer comes from Orion's page.
+     */
+    const start = async (): Promise<TaskContext | null> => {
+      const ct = inOwnTab(props) ? launchCodeFromUrl() : undefined;
+      if (!ct) {
+        // Before the first request: api-client gets its app token through the host.
+        connectHost(props);
+        return resolveTaskContextPointer(props);
+      }
+
+      const launched = await startFromLaunchCode(ct);
+      if (cancelled) return null;
+      if (!launched.ok || !launched.data) {
+        setState({ status: 'error', message: launched.error ?? 'failed to open the task from its launch code' });
+        return null;
+      }
+      connectHost(props, launched.data.session);
+      return fromLaunch(launched.data.context);
+    };
+
+    start().then(async (pointer) => {
+      if (!pointer) return;
+      const result = await revalidateTaskContext(pointer);
       if (cancelled) return;
       if (!result.ok || !result.data) {
         setState({ status: 'error', message: result.error ?? 'failed to validate task context' });
@@ -63,10 +87,10 @@ export default function App(props: CustomProps) {
     );
   }
 
-  // task-context.ts already chose the screen: this page's own address
-  // (?app_screen=, then the path) for standalone launches, Orion's app_screen
-  // prop when mounted. Reading the address here would read the host's page URL
-  // under a mount.
+  // task-context.ts already chose the screen: Orion's answer for a tab opened
+  // with a launch code, this page's own address (?app_screen=, then the path)
+  // for an iframe or a standalone launch, Orion's app_screen prop when mounted.
+  // Reading the address here would read the host's page URL under a mount.
   const modeKey = state.taskContext.taskCode ?? '';
   const mode = modeRegistry[modeKey];
   if (!mode) {

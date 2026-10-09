@@ -1,5 +1,6 @@
 import { BACKEND_URL } from './config';
 import { getAppToken, NoAppTokenError } from './host';
+import type { LaunchedContext } from './task-context';
 import type { TaskContext } from './types';
 
 /** Calls the Fluid App Backend only — this app never talks to uw-be from the browser (§2). */
@@ -72,6 +73,56 @@ async function callBackend<T>(path: string, opts: RequestOptions = {}): Promise<
     return { ok: false, data: null, error: json.error ?? `request failed (HTTP ${response.status})` };
   }
   return { ok: true, data: json.data ?? null, error: null };
+}
+
+// A tab keeps its session for a reload, and only for itself: sessionStorage
+// is per tab, so a link copied into another tab or browser starts from the
+// code again and Orion is asked afresh.
+const tabSessionKey = (ct: string) => `transapp:tab-session:${ct}`;
+
+function storedTabSession(ct: string): string | undefined {
+  try {
+    return window.sessionStorage.getItem(tabSessionKey(ct)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Opened by Orion in its own tab: hands the launch code from the link to this
+ * app's server, which exchanges it with Orion. The answer is a session for
+ * this tab (the bearer for every call after) and the work Orion opened the
+ * tab for. Sent with no bearer: this is where the tab gets one.
+ */
+export async function startFromLaunchCode(ct: string): Promise<BackendResult<{ session: string; context: LaunchedContext }>> {
+  const url = BACKEND_URL.replace(/\/+$/, '') + '/api/launch';
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ct, session: storedTabSession(ct) }),
+    });
+  } catch {
+    return { ok: false, data: null, error: 'Could not reach this app\'s server.' };
+  }
+
+  const json = (await response.json().catch(() => ({}))) as {
+    ok?: boolean;
+    data?: { session: string; context: LaunchedContext };
+    error?: string;
+  };
+  if (!response.ok || json.ok === false || !json.data) {
+    return { ok: false, data: null, error: json.error ?? `request failed (HTTP ${response.status})` };
+  }
+
+  try {
+    window.sessionStorage.setItem(tabSessionKey(ct), json.data.session);
+  } catch {
+    // Without it a reload exchanges the code again, which Orion allows.
+  }
+  return { ok: true, data: json.data, error: null };
 }
 
 /** §3.3 — re-validate a raw context pointer before rendering any mode screen. */

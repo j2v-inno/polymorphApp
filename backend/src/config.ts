@@ -25,6 +25,10 @@ export const config = {
     // it in every real deployment: production must accept only production's.
     // Unset, any Orion that UWBE_BASE_URL points at is accepted.
     issuer: process.env.ORION_ISSUER?.replace(/\/+$/, '') || undefined,
+    // Opened in its own tab, the app gets a launch code on its link, which
+    // Orion answers for an hour and never renews. This server exchanges it
+    // once and keeps its own session with that tab for this long instead.
+    tabSessionMinutes: Number(process.env.TAB_SESSION_MINUTES ?? 480),
   },
 
   // Browser -> Fluid App Backend CORS allowlist. Needed because in Parcel mode the

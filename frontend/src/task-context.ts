@@ -51,6 +51,38 @@ function fromOrionProps(props: OrionTaskAppProps): TaskContext {
   };
 }
 
+/**
+ * The launch code Orion puts on this app's link when it opens it in a tab:
+ * `?ct=`, and nothing else about the task or the operator.
+ */
+export function launchCodeFromUrl(search: string = window.location.search): string | undefined {
+  return new URLSearchParams(search).get('ct') || undefined;
+}
+
+/** What this app's server answers for a launch code: Orion's own word on the work. */
+export interface LaunchedContext {
+  appScreen?: string;
+  taskId: number;
+  taskUid?: string;
+  fileId?: number;
+  projectId: number;
+  projectCode: string;
+  workflowId?: number;
+  workflowCode?: string;
+  userId: number;
+  userLoginId?: string;
+}
+
+/**
+ * The pointer for a tab Orion opened with a launch code. Every field is
+ * Orion's answer to this app's server; the page address is not read. The
+ * screen is the task's choice, mapped as the mounted path maps the prop.
+ */
+export function fromLaunch(launched: LaunchedContext): TaskContext {
+  const { appScreen, ...context } = launched;
+  return { ...context, taskCode: appScreen ? taskCodeForScreen(appScreen) : undefined };
+}
+
 function resolveFromUrl(): TaskContext {
   const params = new URLSearchParams(window.location.search);
   const num = (key: string) => (params.get(key) ? Number(params.get(key)) : undefined);
@@ -97,6 +129,7 @@ function resolveFromUrl(): TaskContext {
     batchName: str('batch_name'),
     fileName: str('file_name'),
     // No token is ever read from the URL: the app token comes from Orion's
-    // page, through host.ts.
+    // page, through host.ts. A tab Orion opened does not come through here at
+    // all: its link carries a launch code and none of these (fromLaunch).
   };
 }

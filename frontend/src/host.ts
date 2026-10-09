@@ -8,7 +8,10 @@ import type { CustomProps, OrionTaskAppProps } from './types';
  *
  *   mounted by Orion (`spa`)    -> the callback Orion passed to mount()
  *   in Orion's iframe (`embed`) -> postMessage to the parent page
- *   its own tab, or standalone  -> nothing; there is no host to tell
+ *   its own tab (`tab`)         -> no page to tell; the bearer is the session
+ *                                  this app's server started from the launch
+ *                                  code on the link
+ *   standalone, no launch code  -> nothing; there is no host and no bearer
  *
  * The two notify signals are nudges, not reports. Orion re-reads its own
  * record when it gets one, so a missed call costs the operator a manual
@@ -19,16 +22,28 @@ type HostCallbacks = Pick<OrionTaskAppProps, 'getAppToken' | 'onFilesRegistered'
 type Host =
   | { kind: 'mounted'; callbacks: HostCallbacks }
   | { kind: 'framed' }
+  | { kind: 'tab'; session: string }
   | { kind: 'none' };
 
 let host: Host = { kind: 'none' };
 
-/** Call from App.tsx on mount, with whatever mount() was given. */
-export function connectHost(customProps?: CustomProps): void {
+/** Whether this app runs in a tab of its own: not mounted by Orion, not in its iframe. */
+export function inOwnTab(customProps?: CustomProps): boolean {
+  return !isMountedByHost(customProps) && window.parent === window;
+}
+
+/**
+ * Call from App.tsx on mount, with whatever mount() was given. `tabSession`
+ * is the session this app's server started from the launch code, when Orion
+ * opened the app in a tab.
+ */
+export function connectHost(customProps?: CustomProps, tabSession?: string): void {
   if (isMountedByHost(customProps)) {
     host = { kind: 'mounted', callbacks: customProps };
   } else if (window.parent !== window) {
     host = { kind: 'framed' };
+  } else if (tabSession) {
+    host = { kind: 'tab', session: tabSession };
   } else {
     host = { kind: 'none' };
   }
@@ -90,6 +105,9 @@ export function getAppToken(): Promise<string> {
     });
   }
   if (host.kind === 'framed') return askParentForAppToken();
+  // A tab has no Orion page to ask. Its bearer is this app's own session,
+  // which its server started by exchanging the launch code with Orion.
+  if (host.kind === 'tab') return Promise.resolve(host.session);
   return Promise.reject(new NoAppTokenError('unavailable'));
 }
 

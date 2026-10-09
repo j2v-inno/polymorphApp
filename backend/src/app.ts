@@ -7,6 +7,7 @@ import { acquisitionRouter } from './routes/acquisition.js';
 import { batchSplitRouter } from './routes/batch-split.js';
 import { bulkRegistrationRouter } from './routes/bulk-registration.js';
 import { downloadRouter } from './routes/download.js';
+import { launchRouter } from './routes/launch.js';
 import { qualificationRouter } from './routes/qualification.js';
 import { transformationRouter } from './routes/transformation.js';
 import { taskContextRouter } from './routes/task-context.js';
@@ -25,7 +26,10 @@ export function createApp() {
 
   app.get('/health', (_req, res) => res.json({ ok: true }));
 
-  // Every data call checks its app token with Orion; health check is exempt.
+  // A tab Orion opened trades the launch code on its link for a session here,
+  // before it has any bearer to show.
+  app.use('/api/launch', launchRouter);
+  // Every data call checks its bearer; health check is exempt.
   app.use('/api', requireAuth);
   app.use('/api/task-context', taskContextRouter);
   app.use('/api/acquisition', acquisitionRouter);
