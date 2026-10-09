@@ -34,7 +34,17 @@ declare global {
   }
 }
 
-type Checked = { ok: true; contract: OrionContract } | { ok: false; status: number; error: string };
+/**
+ * A code this server could not act on. `stale` is set when Orion itself
+ * turned the code down, and holds Orion's own word for why (`unknown_code`,
+ * `file_not_yours`, `cannot_register`): Orion no longer answers for the
+ * code, and the operator's way back is a new launch from Orion. Without it
+ * something broke (Orion unreachable, this server's API token refused,
+ * another app's code) and the code itself may be fine.
+ */
+type Refused = { ok: false; status: number; error: string; stale?: string };
+
+type Checked = { ok: true; contract: OrionContract } | Refused;
 
 /**
  * Answers kept until the token expires, so Orion is asked about once per
@@ -75,7 +85,12 @@ async function exchange(token: string): Promise<Checked> {
   if (response.status === 404 || response.status === 410) {
     // 404: Orion does not know the token (never issued, or expired).
     // 410: the operator no longer has the work the token was issued for.
-    return { ok: false, status: 401, error: body.error?.message ?? 'Orion did not accept this app token.' };
+    return {
+      ok: false,
+      status: 401,
+      error: body.error?.message ?? 'Orion did not accept this app token.',
+      stale: body.error?.code ?? (response.status === 404 ? 'unknown_code' : 'gone'),
+    };
   }
   // 401 or 403 here is about this server's own API token, not the operator.
   return { ok: false, status: 502, error: `Orion refused this server's API token (HTTP ${response.status}).` };
@@ -110,7 +125,7 @@ function tabSession(session: string): { contract: OrionContract; ct: string } | 
   return tabSessions.get(session);
 }
 
-type Launched = { ok: true; session: string; contract: OrionContract } | { ok: false; status: number; error: string };
+type Launched = { ok: true; session: string; contract: OrionContract } | Refused;
 
 /**
  * Starts a tab's session from the launch code on its link. Orion is asked

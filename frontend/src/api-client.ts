@@ -88,13 +88,22 @@ function storedTabSession(ct: string): string | undefined {
   }
 }
 
+export interface LaunchResult extends BackendResult<{ session: string; context: LaunchedContext }> {
+  /**
+   * The link has gone stale: Orion does not know the code or it has expired,
+   * or the operator no longer has the work. Nothing broke, and the tab does
+   * not ask again with the same code. Unset for every other failure.
+   */
+  stale?: boolean;
+}
+
 /**
  * Opened by Orion in its own tab: hands the launch code from the link to this
  * app's server, which exchanges it with Orion. The answer is a session for
  * this tab (the bearer for every call after) and the work Orion opened the
  * tab for. Sent with no bearer: this is where the tab gets one.
  */
-export async function startFromLaunchCode(ct: string): Promise<BackendResult<{ session: string; context: LaunchedContext }>> {
+export async function startFromLaunchCode(ct: string): Promise<LaunchResult> {
   const url = BACKEND_URL.replace(/\/+$/, '') + '/api/launch';
 
   let response: Response;
@@ -112,9 +121,15 @@ export async function startFromLaunchCode(ct: string): Promise<BackendResult<{ s
     ok?: boolean;
     data?: { session: string; context: LaunchedContext };
     error?: string;
+    code?: string;
   };
   if (!response.ok || json.ok === false || !json.data) {
-    return { ok: false, data: null, error: json.error ?? `request failed (HTTP ${response.status})` };
+    return {
+      ok: false,
+      data: null,
+      error: json.error ?? `request failed (HTTP ${response.status})`,
+      stale: json.code === 'stale_link',
+    };
   }
 
   try {

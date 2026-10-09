@@ -11,7 +11,8 @@ import type { CustomProps, OrionTaskAppProps } from './types';
  *   its own tab (`tab`)         -> no page to tell; the bearer is the session
  *                                  this app's server started from the launch
  *                                  code on the link
- *   standalone, no launch code  -> nothing; there is no host and no bearer
+ *   standalone, no launch code  -> nothing; there is no host and no bearer,
+ *                                  and App.tsx stops before any call
  *
  * The two notify signals are nudges, not reports. Orion re-reads its own
  * record when it gets one, so a missed call costs the operator a manual

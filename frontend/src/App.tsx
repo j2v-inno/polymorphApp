@@ -9,6 +9,8 @@ import './styles.css';
 
 type LoadState =
   | { status: 'loading' }
+  // A tab whose link no longer opens anything. Not an error: nothing broke.
+  | { status: 'stale' }
   | { status: 'error'; message: string }
   | { status: 'ready'; taskContext: TaskContext };
 
@@ -24,17 +26,31 @@ export default function App(props: CustomProps) {
      * Orion and answers with the task, the file, the operator and the screen,
      * and with the session every later call is made under. Mounted or framed,
      * it is the props or the address, and the bearer comes from Orion's page.
+     *
+     * A tab's link can go stale: it has no code, the code ran out, or the
+     * operator held or finished the file. The tab then says so and stops. It
+     * loads nothing, does not ask again, and goes nowhere by itself; only a
+     * new launch from Orion makes a code that works.
      */
     const start = async (): Promise<TaskContext | null> => {
-      const ct = inOwnTab(props) ? launchCodeFromUrl() : undefined;
-      if (!ct) {
+      if (!inOwnTab(props)) {
         // Before the first request: api-client gets its app token through the host.
         connectHost(props);
         return resolveTaskContextPointer(props);
       }
 
+      const ct = launchCodeFromUrl();
+      if (!ct) {
+        setState({ status: 'stale' });
+        return null;
+      }
+
       const launched = await startFromLaunchCode(ct);
       if (cancelled) return null;
+      if (launched.stale) {
+        setState({ status: 'stale' });
+        return null;
+      }
       if (!launched.ok || !launched.data) {
         setState({ status: 'error', message: launched.error ?? 'failed to open the task from its launch code' });
         return null;
@@ -76,6 +92,13 @@ export default function App(props: CustomProps) {
           <span className="fluid-spinner" />
           Loading task…
         </div>
+      </AppShell>
+    );
+  }
+  if (state.status === 'stale') {
+    return (
+      <AppShell>
+        <div className="fluid-alert fluid-alert--info">Open this task from Orion.</div>
       </AppShell>
     );
   }

@@ -11,6 +11,12 @@ export const launchRouter = Router();
  * file and the screen. None of that is on the link, and none of it is taken
  * from the browser.
  *
+ * A link that has gone stale is answered apart from anything that broke, as
+ * `code: 'stale_link'` with Orion's own reason beside it: there is no code on
+ * it, Orion does not know the code or it has expired, or the operator no
+ * longer has the work. The screen tells the operator to open the task from
+ * Orion and stops. Any other refusal is an error and carries no `code`.
+ *
  * Mounted ahead of requireAuth: this is where a tab gets its bearer.
  */
 launchRouter.post('/', async (req, res) => {
@@ -19,13 +25,17 @@ launchRouter.post('/', async (req, res) => {
   const session = typeof body.session === 'string' ? body.session : undefined;
 
   if (!ct) {
-    res.status(400).json({ ok: false, error: 'No launch code. Open this task from Orion.' });
+    res.status(400).json({ ok: false, code: 'stale_link', reason: 'no_code', error: 'No launch code. Open this task from Orion.' });
     return;
   }
 
   const launched = await startTabSession(ct, session);
   if (!launched.ok) {
-    res.status(launched.status).json({ ok: false, error: launched.error });
+    res.status(launched.status).json({
+      ok: false,
+      error: launched.error,
+      ...(launched.stale ? { code: 'stale_link', reason: launched.stale } : {}),
+    });
     return;
   }
 

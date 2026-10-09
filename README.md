@@ -43,7 +43,8 @@ the screen gets it from Orion's page. Against the mock, ask the mock for one, fo
 the task and file the call is about, and add `-H "Authorization: Bearer $TOKEN"` to
 each curl below (see "Trying the token check against the mock"). The standalone
 frontend harness has no Orion page beside it: open it with a launch code on its
-address (`?ct=`, see "Opening it in its own tab"), or its calls answer `401`.
+address (`?ct=`, see "Opening it in its own tab"), or it says "Open this task
+from Orion" and makes no call.
 
 ```bash
 # 1. acquisition — register, gate-check, upload, complete
@@ -139,6 +140,22 @@ the session across a reload. A link copied into another tab or browser starts
 from the code again, and Orion is asked afresh: once the operator has held or
 finished the file, it opens nothing.
 
+**A link that has gone stale gets one message, "Open this task from Orion", and
+the tab stops.** It loads no task data, does not ask again with the same code,
+and does not send the tab anywhere. Three cases, one message:
+
+| The link | Orion's answer | `POST /api/launch` |
+|---|---|---|
+| has no `ct` | not asked | not called: the screen stops by itself (the route answers `400`, `reason: no_code`) |
+| has a code Orion does not know, or one that has expired | `404 unknown_code` | `401`, `code: stale_link`, `reason: unknown_code` |
+| has a code for work the operator no longer has | `410 file_not_yours` or `cannot_register` | `401`, `code: stale_link`, `reason:` Orion's own |
+
+`code: stale_link` is how the screen tells a stale link from something that
+broke. Any other failure (Orion unreachable, `UWBE_API_TOKEN` refused, a code
+issued for another Web App) carries no `code` and shows as an error, as before.
+This is the tab only: mounted or framed, a refused app token is still each
+screen's own error.
+
 Against the mock, a token from `/mock/app-token` stands in for a launch code:
 
 ```bash
@@ -146,6 +163,10 @@ CT=$(curl -s -X POST http://localhost:4200/mock/app-token -H "Content-Type: appl
   -d '{"task_id":204,"file_id":1001,"screen":"qualification","ttl":3600}' \
   | node -pe 'JSON.parse(require("fs").readFileSync(0)).data.token')
 open "http://localhost:9100/?ct=$CT"
+
+# The same link once the operator has held or finished the file: stale.
+curl -s -X POST "http://localhost:4200/mock/app-token/$CT/hold"
+open "http://localhost:9100/?ct=$CT"   # in a new tab: "Open this task from Orion"
 ```
 
 ### Driving the frontend in a browser instead of curl
@@ -155,6 +176,11 @@ open "http://localhost:9100/?ct=$CT"
 self-mounts the app with `customProps: {}` (verified — see the generated
 `index.html`'s inline script). Since no `taskCode` is supplied, `App.tsx` falls back
 to parsing the URL (§3.2) — append the launch query params to drive a screen, e.g.:
+
+> **In a tab of its own this no longer drives a screen.** A tab opens from a
+> launch code and reads nothing else from its address: with no `ct` it says
+> "Open this task from Orion" and stops. The plain params below are still read
+> in an iframe, where the bearer comes from Orion's page.
 
 ```
 http://localhost:9100/wa/bulk-registration?project_id=2&project_code=TRANSAPPTEST&workflow_id=6&workflow_code=OTS&task_id=14&task_uid=16899866e6904edeae65992fbfacd619&user_id=7
@@ -469,7 +495,8 @@ guessing silently:
 | `/download` link resolution (§6.4) | Implemented for a known set of file IDs. How this screen discovers *all* sibling split-file IDs from one launch context isn't specified in §6 — see the TODO in `frontend/src/modes/download/DownloadScreen.tsx` |
 | Auth when Orion mounts or frames the app | Done. The screen asks Orion's page for an app token before every call (`getAppToken()` when mounted, `orion:get-app-token` by message in an iframe) and sends it as `Authorization: Bearer`. The backend exchanges it with Orion using `UWBE_API_TOKEN`, and refuses a token for another Web App, or a request naming another operator, task or file (`backend/src/middleware/auth.ts`) |
 | Auth in its own tab | Done. Orion opens the tab with a launch code (`?ct=`) and nothing else on the link. The backend exchanges it with Orion once and keeps its own session with the tab; the screen takes the task, the file, the operator and its screen from that answer (`backend/src/routes/launch.ts`, "Opening it in its own tab") |
-| Standalone with no launch code | **Every `/api` call answers `401`.** There is no Orion page to ask for an app token and no code to exchange, and the `ALLOW_UNAUTHENTICATED_STANDALONE` switch is gone. This includes a link that still carries the task's fields in plain text. The backend's check can be tried without Orion: see "Trying the token check against the mock" |
+| A stale link in its own tab | Done. No code, a code Orion does not know or that has expired, or work the operator no longer has: the tab says "Open this task from Orion" and stops, with no call after and no redirect. The backend passes Orion's refusal on as `code: stale_link` (`backend/src/routes/launch.ts`, "Opening it in its own tab"). Not covered: a tab whose own session ends mid-work shows the screen's error until it is reloaded |
+| Standalone with no launch code | **Nothing opens.** There is no Orion page to ask for an app token and no code to exchange, and the `ALLOW_UNAUTHENTICATED_STANDALONE` switch is gone. The screen says "Open this task from Orion" and makes no call, also for a link that still carries the task's fields in plain text. A direct `/api` call with no bearer still answers `401`; the backend's check can be tried without Orion: see "Trying the token check against the mock" |
 
 Do not silently resolve any of the above without checking with the doc's named owner
 first — that's the whole point of flagging them inline instead of guessing.
