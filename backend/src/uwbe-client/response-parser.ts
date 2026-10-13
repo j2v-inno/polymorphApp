@@ -30,6 +30,7 @@ const ENDPOINT_STYLES: Record<string, EnvelopeStyle> = {
   'update-file-meta-data': 'A',
   'get-task-ongoing-file': 'A',
   'get-file-task-output': 'A',
+  'get-file-task-status': 'A',
   'get-all-tasks': 'A',
   'flow-back-file-task': 'B',
 };

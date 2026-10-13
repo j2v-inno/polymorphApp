@@ -23,7 +23,7 @@ type HostCallbacks = Pick<OrionTaskAppProps, 'getAppToken' | 'onFilesRegistered'
 type Host =
   | { kind: 'mounted'; callbacks: HostCallbacks }
   | { kind: 'framed' }
-  | { kind: 'tab'; session: string }
+  | { kind: 'tab'; session: string; onSessionOver?: () => void }
   | { kind: 'none' };
 
 let host: Host = { kind: 'none' };
@@ -36,18 +36,34 @@ export function inOwnTab(customProps?: CustomProps): boolean {
 /**
  * Call from App.tsx on mount, with whatever mount() was given. `tabSession`
  * is the session this app's server started from the launch code, when Orion
- * opened the app in a tab.
+ * opened the app in a tab, and `onTabSessionOver` is called once if that
+ * session ends while the tab is open.
  */
-export function connectHost(customProps?: CustomProps, tabSession?: string): void {
+export function connectHost(customProps?: CustomProps, tabSession?: string, onTabSessionOver?: () => void): void {
   if (isMountedByHost(customProps)) {
     host = { kind: 'mounted', callbacks: customProps };
   } else if (window.parent !== window) {
     host = { kind: 'framed' };
   } else if (tabSession) {
-    host = { kind: 'tab', session: tabSession };
+    host = { kind: 'tab', session: tabSession, onSessionOver: onTabSessionOver };
   } else {
     host = { kind: 'none' };
   }
+}
+
+/**
+ * This app's server has ended the tab's session: Orion no longer says the
+ * operator has the work, or the session ran out. Drops the bearer, so no
+ * call follows, and tells App.tsx. Returns false, and does nothing, when the
+ * app is not in a tab of its own: mounted or framed, a refused app token is
+ * the screen's own error.
+ */
+export function tabSessionOver(): boolean {
+  if (host.kind !== 'tab') return false;
+  const { onSessionOver } = host;
+  host = { kind: 'none' };
+  onSessionOver?.();
+  return true;
 }
 
 /** §10 unmount hygiene — a call that lands after unmount must not reach a host that has moved on. */

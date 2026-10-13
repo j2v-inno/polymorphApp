@@ -27,8 +27,12 @@ export const config = {
     issuer: process.env.ORION_ISSUER?.replace(/\/+$/, '') || undefined,
     // Opened in its own tab, the app gets a launch code on its link, which
     // Orion answers for an hour and never renews. This server exchanges it
-    // once and keeps its own session with that tab for this long instead.
+    // and keeps its own session with that tab for this long instead.
     tabSessionMinutes: Number(process.env.TAB_SESSION_MINUTES ?? 480),
+    // How long a tab's session goes on Orion's last answer before Orion is
+    // asked again whether the operator still has the work. A file put on
+    // hold, completed or sent back closes the tab within this time.
+    tabRecheckMinutes: Number(process.env.TAB_RECHECK_MINUTES ?? 10),
   },
 
   // Browser -> Fluid App Backend CORS allowlist. Needed because in Parcel mode the

@@ -218,16 +218,57 @@ app.get('/get-file-task-output', (req, res) => {
 // know, one that expired, one issued for another Web App, and one whose
 // operator no longer has the file.
 //
+// The answer has every part of Orion's contract version 1.0 (the Orion
+// backend's docs/api/webapp-contract.md and webapp-contract.v1.0.schema.json):
+// the task's settings, the file with a download link, the quota, and the two
+// addresses to call next, which answer here too. Every value is canned, and
+// the one "secret" among the settings is not a secret.
+//
 // Every contract here says issuer "Orion self-test". A server set to trust one
 // Orion (transapp: ORION_ISSUER) must refuse all of them: that is the proof a
 // production server cannot be talked round by a test token.
 
 const SELF_TEST_ISSUER = 'Orion self-test';
-/** @type {Map<string, { contract: Record<string, unknown>, expiresAt: number, held: boolean }>} */
+// Real Orion: its own address + /api/v1. Every address in `actions` starts here.
+const API_BASE_URL = `${BASE_URL}/v1`;
+// Seconds a real download link lives (Orion's CONTRACT_DOWNLOAD_URL_TTL).
+const DOWNLOAD_URL_TTL = 120;
+// The statuses a file has at a task while its operator may work on it: In
+// Progress and Pending. Orion's own rule for "still has the file".
+const IN_PROCESS = ['I', 'P'];
+
+/** @type {Map<string, { contract: Record<string, any>, expiresAt: number, held: boolean }>} */
 const contractsByCode = new Map();
 
+// Where each file stands at its task: who has it, and its status there. A
+// code issued for a file puts it In Progress with that operator; "hold" and
+// "complete" move it on, and every code for that file is refused from then.
+/** @type {Map<number, { id: number, project_id: number, task_id: number, file_id: number, handled_by: number, file_task_status: string }>} */
+const fileTasksById = new Map();
+const fileTaskId = (fileId) => 900000 + Number(fileId);
+
+// What a contract's file is when this mock run uploaded nothing for it.
+const CANNED_INPUT = Buffer.from('Orion self-test: a canned input file.\n');
+
+const instant = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
 const refuse = (res, status, code, message) =>
-  res.status(status).json({ success: false, code: status, message, error: { code, message, retryable: false } });
+  res
+    .status(status)
+    .set('Cache-Control', 'no-store')
+    .json({ success: false, code: status, message, error: { code, message, retryable: false } });
+
+// Orion answers a bare 401 to a call with no API token, before anything else.
+// The mock checks only that one was sent, not which.
+const needsApiToken = (req, res, next) => {
+  if (req.header('api-token')) return next();
+  res.status(401).json({ success: false, code: 401, message: 'Unauthorized', data: null });
+};
+
+const downloadLink = (fileId) => ({
+  download_url: `${BASE_URL}/mock/input-file/${fileId}`,
+  expires_at: instant(Date.now() + DOWNLOAD_URL_TTL * 1000),
+});
 
 // Stands in for Orion's own page asking for a token: Orion checks the
 // operator's session there, and this checks nothing. Body, all optional:
@@ -240,65 +281,181 @@ const refuse = (res, status, code, message) =>
 app.post('/mock/app-token', (req, res) => {
   const b = req.body ?? {};
   const ttl = Number(b.ttl ?? 600);
-  const fileId = b.file_id === undefined ? 1001 : b.file_id;
+  const fileId = b.file_id === null ? null : Number(b.file_id ?? 1001);
   const taskId = Number(b.task_id ?? 204);
   const projectId = Number(b.project_id ?? 334);
+  const userId = Number(b.user_id ?? 1);
   const token = randomBytes(32).toString('hex');
   const expiresAt = Date.now() + ttl * 1000;
+
+  if (fileId !== null) {
+    fileTasksById.set(fileTaskId(fileId), {
+      id: fileTaskId(fileId),
+      project_id: projectId,
+      task_id: taskId,
+      file_id: fileId,
+      handled_by: userId,
+      file_task_status: 'I',
+    });
+  }
 
   contractsByCode.set(token, {
     expiresAt,
     held: false,
+    // As Orion keeps it: everything but `inputs`, which the exchange adds.
     contract: {
       contract_version: '1.0',
       issuer: SELF_TEST_ISSUER,
-      expires_at: new Date(expiresAt).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      expires_at: instant(expiresAt),
       organization_id: null,
+      api_base_url: API_BASE_URL,
       web_app: { code: b.web_app ?? 'transapp', screen: b.screen ?? null },
       subject:
         fileId === null
-          ? { type: 'task', id: taskId, project_id: projectId }
-          : { type: 'file_task', id: 900000 + Number(fileId), project_id: projectId },
+          ? { type: 'task', id: taskId, project_id: projectId, process_level: 'F' }
+          : { type: 'file_task', id: fileTaskId(fileId), project_id: projectId, process_level: 'F' },
       context: {
         project: { id: projectId, code: b.project_code ?? 'MOCK' },
         workflow: { id: 19, code: 'MAINFLOW' },
-        task: { id: taskId, uid: b.task_uid ?? `mock-task-${taskId}`, code: 'QUALIFICATION', name: 'Qualification' },
-        file: fileId === null ? null : { id: Number(fileId) },
+        task: { id: taskId, uid: b.task_uid ?? `mock-task-${taskId}`, code: 'QUALIFICATION', name: 'Qualification', type: 'M' },
+        job: fileId === null ? null : { id: 87789 },
+        batch: fileId === null ? null : { id: 557886, label: 'UF0001013' },
+        file: fileId === null ? null : { id: fileId },
       },
       actor: {
-        user_id: Number(b.user_id ?? 1),
+        user_id: userId,
         login_id: b.login_id ?? 'selftest',
         display_name: b.display_name ?? 'Self Test',
       },
+      // Text or null, as Orion stores them. `api_key` stands in for a secret
+      // setting, which real Orion decrypts at the exchange.
+      parameters: { markup_profile: 'strict', max_passes: '2', api_key: 'self-test-not-a-secret' },
+      constraints: { quota: { unit: 'P', limit: 40 }, due_at: null },
+      // Full addresses, each with project_id in its query, used as given.
+      actions:
+        fileId === null
+          ? {}
+          : {
+              download_url: {
+                method: 'GET',
+                href: `${API_BASE_URL}/files/${fileId}/download-url?project_id=${projectId}&task_id=${taskId}`,
+              },
+              complete: {
+                method: 'POST',
+                href: `${API_BASE_URL}/file-tasks/${fileTaskId(fileId)}/complete?project_id=${projectId}`,
+              },
+            },
     },
   });
 
   res.json(respond({ token, expires_in: ttl }, 'App token issued'));
 });
 
-// Stands in for the operator putting the file on hold, completing it or
-// sending it back: the token stays known, and the exchange answers 410.
+// Stands in for the operator putting the file on hold (completing it or
+// sending it back ends the same way): the code stays known, and the exchange
+// answers 410. It works on a code that has expired too, so a server that
+// asks about the file after the code's hour (get-file-task-status, below)
+// can be tried. For a code with no file it stands in for the operator being
+// taken off the task.
 app.post('/mock/app-token/:ct/hold', (req, res) => {
   const kept = contractsByCode.get(req.params.ct);
   if (!kept) return refuse(res, 404, 'unknown_code', 'The mock never issued this code.');
   kept.held = true;
+  const file = kept.contract.context.file;
+  const fileTask = file ? fileTasksById.get(fileTaskId(file.id)) : undefined;
+  if (fileTask) fileTask.file_task_status = 'O';
   res.json(respond(null, 'Held'));
 });
 
 // The exchange itself, at Orion's own address under UWBE_BASE_URL.
-app.get('/v1/webapp/contract/:ct', (req, res) => {
-  if (!req.header('api-token')) {
-    return res.status(401).json({ success: false, code: 401, message: 'Unauthorized', data: null });
-  }
+app.get('/v1/webapp/contract/:ct', needsApiToken, (req, res) => {
   const kept = contractsByCode.get(req.params.ct);
   if (!kept || kept.expiresAt <= Date.now()) {
-    contractsByCode.delete(req.params.ct);
     return refuse(res, 404, 'unknown_code', 'Orion does not know this code. It was never issued, or it has expired.');
   }
-  if (kept.held) {
+
+  const { context, actor } = kept.contract;
+  if (!context.file) {
+    if (kept.held) return refuse(res, 410, 'cannot_register', 'The operator can no longer register files at this task.');
+    return res.set('Cache-Control', 'no-store').json(respond({ ...kept.contract, inputs: [] }, 'Web App contract'));
+  }
+
+  // Read now, never from the code: what was true when it was made may not be.
+  const fileTask = fileTasksById.get(fileTaskId(context.file.id));
+  if (!fileTask || fileTask.handled_by !== actor.user_id || !IN_PROCESS.includes(fileTask.file_task_status)) {
     return refuse(res, 410, 'file_not_yours', 'The operator no longer has this file in process at this task.');
   }
-  res.set('Cache-Control', 'no-store').json(respond(kept.contract, 'Web App contract'));
+
+  // The file and its download link are made by the exchange, as in Orion.
+  const uploaded = filesById.get(context.file.id);
+  const inputs = [
+    {
+      file_id: context.file.id,
+      name: uploaded ? `file-${context.file.id}.pdf` : `file-${context.file.id}.txt`,
+      mime: uploaded ? 'application/pdf' : 'text/plain',
+      bytes: (uploaded ?? CANNED_INPUT).length,
+      ...downloadLink(context.file.id),
+    },
+  ];
+  res.set('Cache-Control', 'no-store').json(respond({ ...kept.contract, inputs }, 'Web App contract'));
+});
+
+// Not an Orion address: where a contract's download link points, in place of
+// a signed storage link. Serves what this mock run uploaded for the file, or
+// a line of canned text. Unlike a real link it never stops working.
+app.get('/mock/input-file/:fileId', (req, res) => {
+  const uploaded = filesById.get(Number(req.params.fileId));
+  res.set('Content-Type', uploaded ? 'application/pdf' : 'text/plain').send(uploaded ?? CANNED_INPUT);
+});
+
+// `actions.download_url`: a fresh link, for when the one in `inputs` has run out.
+app.get('/v1/files/:file/download-url', needsApiToken, (req, res) => {
+  const fileTask = fileTasksById.get(fileTaskId(req.params.file));
+  if (!fileTask || String(fileTask.task_id) !== String(req.query.task_id) || String(fileTask.project_id) !== String(req.query.project_id)) {
+    return refuse(res, 404, 'file_not_found', 'This file is not at that task, or nothing is stored for it.');
+  }
+  res.set('Cache-Control', 'no-store').json(respond(downloadLink(fileTask.file_id), 'Download link'));
+});
+
+// `actions.complete`: finishes the file at the task, recorded for whoever has
+// it. The answer is update-file-status's own. From here the file is no longer
+// the operator's, so the exchange and the look-up below both say so.
+app.post('/v1/file-tasks/:fileTask/complete', needsApiToken, (req, res) => {
+  const fileTask = fileTasksById.get(Number(req.params.fileTask));
+  if (!fileTask || String(fileTask.project_id) !== String(req.query.project_id)) {
+    return refuse(res, 404, 'file_task_not_found', 'This file is no longer at that task.');
+  }
+  fileTask.file_task_status = 'C';
+  res.json(respond(null));
+});
+
+// Orion's look-up of where a file stands at a task (routes/api.php,
+// get-file-task-status), cut down to what a `tab` app's server reads once its
+// launch code has expired: who has the file, and its status at the task.
+// Both stay as they were after a hold or a completion; only the status moves.
+app.get('/get-file-task-status', needsApiToken, (req, res) => {
+  const fileTask = fileTasksById.get(fileTaskId(req.query.file_id));
+  if (!fileTask || String(fileTask.task_id) !== String(req.query.task_id) || String(fileTask.project_id) !== String(req.query.project_id)) {
+    return res.status(404).json({ success: false, code: 404, data: null, message: 'File task not found.' });
+  }
+  res.json(
+    respond(
+      {
+        file: {
+          id: fileTask.file_id,
+          file_id: fileTask.file_id,
+          file_name: `file-${fileTask.file_id}.pdf`,
+          file_task_id: fileTask.id,
+          project_id: fileTask.project_id,
+          task_id: fileTask.task_id,
+          file_task_status: fileTask.file_task_status,
+          handled_by: fileTask.handled_by,
+          user_id: fileTask.handled_by,
+        },
+      },
+      'File retrieved successfully',
+    ),
+  );
 });
 
 app.listen(PORT, () => {

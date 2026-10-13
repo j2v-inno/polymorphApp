@@ -19,6 +19,9 @@ export default function App(props: CustomProps) {
 
   useEffect(() => {
     let cancelled = false;
+    // Set when this app's server ends a tab's session. The message is on
+    // screen by then, and the call that learned of it must not replace it.
+    let sessionOver = false;
 
     /**
      * Where the work comes from. Opened by Orion in a tab of its own, the
@@ -31,6 +34,10 @@ export default function App(props: CustomProps) {
      * operator held or finished the file. The tab then says so and stops. It
      * loads nothing, does not ask again, and goes nowhere by itself; only a
      * new launch from Orion makes a code that works.
+     *
+     * The same goes for a tab already at work. This app's server asks Orion
+     * again every few minutes, and ends the session once the operator no
+     * longer has the file: the screen is replaced by the same message.
      */
     const start = async (): Promise<TaskContext | null> => {
       if (!inOwnTab(props)) {
@@ -55,14 +62,17 @@ export default function App(props: CustomProps) {
         setState({ status: 'error', message: launched.error ?? 'failed to open the task from its launch code' });
         return null;
       }
-      connectHost(props, launched.data.session);
+      connectHost(props, launched.data.session, () => {
+        sessionOver = true;
+        if (!cancelled) setState({ status: 'stale' });
+      });
       return fromLaunch(launched.data.context);
     };
 
     start().then(async (pointer) => {
       if (!pointer) return;
       const result = await revalidateTaskContext(pointer);
-      if (cancelled) return;
+      if (cancelled || sessionOver) return;
       if (!result.ok || !result.data) {
         setState({ status: 'error', message: result.error ?? 'failed to validate task context' });
         return;

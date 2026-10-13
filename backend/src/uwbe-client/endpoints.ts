@@ -245,6 +245,41 @@ export async function getTaskOngoingFile(params: GetTaskOngoingFileParams): Prom
   return { ...result, data: result.data.file };
 }
 
+export interface GetFileTaskStatusParams {
+  projectId: number;
+  taskId: number;
+  fileId: number;
+}
+
+export interface FileTaskStatus {
+  /** Orion's id of the operator who has the file at the task. Stays set after a hold or a completion. */
+  handled_by?: number | null;
+  /** The file's status at the task (`I`, `P`, `O`, `C`, ...). NOT `file_status`, which this row does not carry. */
+  file_task_status?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Style A (TaskProcessController@get_file_task_status). Where a file stands
+ * at a task right now: `data: { file: {...} }`, unwrapped here. Confirmed
+ * against a live call (2026-10-13) for a Web App task: `handled_by` and
+ * `file_task_status` both reach the answer. It answers 404 ("File task not
+ * found.") when the file is not active at the task, and 400 ("Invalid
+ * file.") for a file the project does not have.
+ */
+export async function getFileTaskStatus(params: GetFileTaskStatusParams): Promise<UwbeResult<FileTaskStatus>> {
+  const result = await callUwbe<{ file: FileTaskStatus }>('get-file-task-status', {
+    method: 'GET',
+    query: {
+      project_id: params.projectId,
+      task_id: params.taskId,
+      file_id: params.fileId,
+    },
+  });
+  if (!result.ok || !result.data) return { ...result, data: null };
+  return { ...result, data: result.data.file };
+}
+
 export interface ResolveActiveFileParams {
   projectId: number;
   projectCode: string;

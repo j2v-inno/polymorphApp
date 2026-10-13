@@ -44,10 +44,6 @@ services:
       BATCH_SPLIT_QUALIFICATION_TASK_CODE: ${BATCH_SPLIT_QUALIFICATION_TASK_CODE:-QUALIFICATION}
       BATCH_SPLIT_TRANSFORM_TASK_CODE: ${BATCH_SPLIT_TRANSFORM_TASK_CODE:-TRANSFORMATION}
       BATCH_SPLIT_CHAPTER_HEADING_PATTERN: ${BATCH_SPLIT_CHAPTER_HEADING_PATTERN:-}
-      # §13 #6 — standalone-mode auth is still an open blocker (FLUID_APP_DEV_CONTEXT.md).
-      # True here only because this deploy IS the standalone/demo path; revisit
-      # before this is anything other than an internal RND demo.
-      ALLOW_UNAUTHENTICATED_STANDALONE: ${ALLOW_UNAUTHENTICATED_STANDALONE:-true}
     restart: unless-stopped
     healthcheck:
       # busybox wget, not curl — the node:20-alpine runner image doesn't have

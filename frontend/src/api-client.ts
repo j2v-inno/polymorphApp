@@ -1,5 +1,5 @@
 import { BACKEND_URL } from './config';
-import { getAppToken, NoAppTokenError } from './host';
+import { getAppToken, NoAppTokenError, tabSessionOver } from './host';
 import type { LaunchedContext } from './task-context';
 import type { TaskContext } from './types';
 
@@ -67,7 +67,14 @@ async function callBackend<T>(path: string, opts: RequestOptions = {}): Promise<
   }
 
   const response = await fetch(url.toString(), { method: opts.method ?? 'GET', headers, body });
-  const json = (await response.json().catch(() => ({}))) as { ok?: boolean; data?: T; error?: string };
+  const json = (await response.json().catch(() => ({}))) as { ok?: boolean; data?: T; error?: string; code?: string };
+
+  // The server ended this tab's session: the operator held, finished or sent
+  // back the file, or the session ran out. The tab says so and stops, as it
+  // does for a stale link; the screen that made this call is on its way out.
+  if (json.code === 'stale_link' && tabSessionOver()) {
+    return { ok: false, data: null, error: 'Open this task from Orion.' };
+  }
 
   if (!response.ok || json.ok === false) {
     return { ok: false, data: null, error: json.error ?? `request failed (HTTP ${response.status})` };
