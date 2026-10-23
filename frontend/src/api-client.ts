@@ -276,6 +276,13 @@ export function getBulkRegistrationStatus(sheetId: string): Promise<BackendResul
 // §6.2 /qualification
 // ---------------------------------------------------------------------------
 
+/** An earlier task the file may be sent back to, as Orion lists it in the task's Flow Back settings. */
+export interface FlowBackTarget {
+  task_id: number;
+  task_name: string;
+  file_task_id: number;
+}
+
 export interface QualificationContext {
   id: number;
   task_uid: string;
@@ -283,6 +290,8 @@ export interface QualificationContext {
   /** Confirmed field name from get-task-next-file-with-start — NOT file_download_url. Can be null even for a legitimately-uploaded file; see backend/src/routes/qualification.ts. */
   input_download_url?: string | null;
   meta_data?: Record<string, unknown> | null;
+  /** Where Rework may send the file. Empty when the task has no Flow Back settings. */
+  flow_back_targets?: FlowBackTarget[];
 }
 
 export function getQualificationContext(taskContext: TaskContext, workflowCode: string): Promise<BackendResult<QualificationContext>> {
@@ -340,6 +349,7 @@ export function completeQualification(
   outcome: QualificationOutcome,
   pagesWithErrors: number[],
   flowbackReason?: string,
+  flowBackToFileTaskId?: number,
 ): Promise<BackendResult<{ outcome: QualificationOutcome }>> {
   return callBackend('/api/qualification/complete', {
     method: 'POST',
@@ -354,6 +364,7 @@ export function completeQualification(
       pagesWithErrors,
       outcome,
       flowbackReason,
+      flowBackToFileTaskId,
       userId: taskContext.userId,
     },
   });

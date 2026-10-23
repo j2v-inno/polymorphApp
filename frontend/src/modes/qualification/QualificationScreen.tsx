@@ -6,6 +6,7 @@ import {
   getQualificationContext,
   postPagesViewed,
   updateQualificationMetadata,
+  type FlowBackTarget,
   type QualificationContext,
   type QualificationOutcome,
 } from '../../api-client';
@@ -31,6 +32,8 @@ const SYSTEM_META_KEYS = new Set([
   'content_format',
 ]);
 
+const NO_FLOW_BACK_TARGETS = 'This task has no earlier task to send files back to. Ask an admin to set Flow Back.';
+
 function extractEditableMetadata(metaData: Record<string, unknown> | null | undefined): MetadataField[] {
   if (!metaData) return [];
   return Object.entries(metaData)
@@ -46,6 +49,9 @@ export function QualificationScreen({ taskContext }: Props) {
   const [viewedPages, setViewedPages] = useState<number[]>([]);
   const [errorPages, setErrorPages] = useState<Set<number>>(new Set());
   const [flowbackReason, setFlowbackReason] = useState('');
+  // file_task_id of the chosen earlier task, as a string for the select.
+  const [flowBackTo, setFlowBackTo] = useState('');
+  const [sentBackTo, setSentBackTo] = useState<FlowBackTarget | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState<QualificationOutcome | null>(null);
@@ -149,11 +155,27 @@ export function QualificationScreen({ taskContext }: Props) {
     setMetadataStatus('saved');
   }
 
+  // With one earlier task it is chosen for the operator.
+  const flowBackTargets = context?.flow_back_targets ?? [];
+  const reworkTarget =
+    flowBackTargets.length === 1 ? flowBackTargets[0] : flowBackTargets.find((t) => String(t.file_task_id) === flowBackTo);
+
   async function submit(outcome: QualificationOutcome) {
     if (!context) return;
-    if (outcome === 'rework' && !flowbackReason.trim()) {
-      setSubmitError('A flowback reason is required for rework.');
-      return;
+    if (outcome === 'rework') {
+      // Nothing is sent, so the file is not put on hold.
+      if (!flowBackTargets.length) {
+        setSubmitError(NO_FLOW_BACK_TARGETS);
+        return;
+      }
+      if (!reworkTarget) {
+        setSubmitError('Choose the task to send the file back to.');
+        return;
+      }
+      if (!flowbackReason.trim()) {
+        setSubmitError('A flowback reason is required for rework.');
+        return;
+      }
     }
     setSubmitting(true);
     setSubmitError(null);
@@ -163,6 +185,7 @@ export function QualificationScreen({ taskContext }: Props) {
       outcome,
       Array.from(errorPages),
       outcome === 'rework' ? flowbackReason : undefined,
+      outcome === 'rework' ? reworkTarget?.file_task_id : undefined,
     );
     setSubmitting(false);
     if (!result.ok) {
@@ -171,13 +194,18 @@ export function QualificationScreen({ taskContext }: Props) {
     }
     // Clean or rework, the file has left this operator's hands.
     notifyTaskComplete();
+    if (outcome === 'rework') setSentBackTo(reworkTarget ?? null);
     setSubmitted(outcome);
   }
 
   if (submitted) {
     return (
       <div className="fluid-screen fluid-screen--qualification">
-        <div className="fluid-done">Qualification complete — outcome: {submitted}.</div>
+        <div className="fluid-done">
+          {sentBackTo
+            ? `File sent back to ${sentBackTo.task_name} for rework.`
+            : `Qualification complete — outcome: ${submitted}.`}
+        </div>
       </div>
     );
   }
@@ -294,15 +322,31 @@ export function QualificationScreen({ taskContext }: Props) {
         <button className="fluid-btn fluid-btn--primary" onClick={() => submit('clean')} disabled={submitting}>
           Complete (clean)
         </button>
-        <div className="fluid-inline-field">
-          <input
-            placeholder="Flowback reason (required for rework)"
-            value={flowbackReason}
-            onChange={(event) => setFlowbackReason(event.target.value)}
-          />
-          <button className="fluid-btn fluid-btn--secondary" onClick={() => submit('rework')} disabled={submitting}>
-            Send back for rework
-          </button>
+        <div>
+          {flowBackTargets.length > 1 && (
+            <label className="fluid-field">
+              Send back to
+              <select value={flowBackTo} onChange={(event) => setFlowBackTo(event.target.value)} disabled={submitting}>
+                <option value="">Choose a task…</option>
+                {flowBackTargets.map((target) => (
+                  <option key={target.file_task_id} value={target.file_task_id}>
+                    {target.task_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div className="fluid-inline-field">
+            <input
+              placeholder="Flowback reason (required for rework)"
+              maxLength={255}
+              value={flowbackReason}
+              onChange={(event) => setFlowbackReason(event.target.value)}
+            />
+            <button className="fluid-btn fluid-btn--secondary" onClick={() => submit('rework')} disabled={submitting}>
+              Send back for rework
+            </button>
+          </div>
         </div>
         <button
           className="fluid-btn fluid-btn--ghost"
