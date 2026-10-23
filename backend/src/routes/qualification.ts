@@ -163,11 +163,13 @@ qualificationRouter.post('/metadata', async (req, res) => {
 });
 
 interface CompleteBody {
-  projectId: number;
+  /** Only needed if the task requires the reviewed file as its output. */
+  projectId?: number;
   projectCode: string;
   /** Plumbing only — kept so payloads mirror the launch URL. */
   workflowId?: number;
-  taskId: number;
+  /** Only needed if the task requires the reviewed file as its output. */
+  taskId?: number;
   taskUid: string;
   fileId: number;
   jobId?: number;
@@ -176,6 +178,53 @@ interface CompleteBody {
   flowbackReason?: string;
   nextTask?: string;
   userId?: number;
+}
+
+/** uw-be's refusal when a task with user_should_upload_output = 1 is completed without file_data. */
+const FILE_DATA_REQUIRED = 'File data is required';
+
+type ReviewedFile =
+  | { ok: true; fileData: { bytes: Buffer; fileName: string; contentType?: string } }
+  | { ok: false; error: string };
+
+/**
+ * The bytes of the file under review, fetched server-side from its own
+ * download URL. Needs projectId and taskId to resolve the file — callers from
+ * before this fallback existed don't send them, and only reach here on a task
+ * that never completed for them anyway.
+ */
+async function fetchReviewedFile(body: CompleteBody): Promise<ReviewedFile> {
+  if (!body.projectId || !body.taskId) {
+    return { ok: false, error: 'Sending the reviewed file needs projectId and taskId.' };
+  }
+  const active = await resolveActiveFile({
+    projectId: body.projectId,
+    projectCode: body.projectCode,
+    taskId: body.taskId,
+    taskUid: body.taskUid,
+    fileId: body.fileId,
+    jobId: body.jobId,
+  });
+  const downloadUrl = active.data?.input_download_url;
+  if (!active.ok || !downloadUrl) {
+    return { ok: false, error: active.error ?? 'uw-be returned no download URL for this file.' };
+  }
+  try {
+    const download = await fetch(downloadUrl);
+    if (!download.ok) {
+      return { ok: false, error: `Fetching the reviewed file failed: HTTP ${download.status}.` };
+    }
+    return {
+      ok: true,
+      fileData: {
+        bytes: Buffer.from(await download.arrayBuffer()),
+        fileName: String(active.data?.file_name ?? `file-${body.fileId}`),
+        contentType: download.headers.get('content-type') ?? undefined,
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: `Fetching the reviewed file failed: ${err instanceof Error ? err.message : String(err)}.` };
+  }
 }
 
 /** §6.2 step 3 — 3-way routing outcome, chosen by the operator on the qualification screen. */
@@ -213,39 +262,10 @@ qualificationRouter.post('/complete', async (req, res) => {
     return;
   }
 
-  // Clean. The reviewed file goes back as this task's output: uw-be refuses
-  // completion without one on tasks with user_should_upload_output = 1, and
-  // the next task only looks for its input in THIS task's output. A review
-  // doesn't change the file, so it's the same bytes, fetched server-side
-  // from the file's own download URL.
-  const active = await resolveActiveFile({
-    projectId: body.projectId,
-    projectCode: body.projectCode,
-    taskId: body.taskId,
-    taskUid: body.taskUid,
-    fileId: body.fileId,
-    jobId: body.jobId,
-  });
-  const downloadUrl = active.data?.input_download_url;
-  if (!active.ok || !downloadUrl) {
-    res.status(502).json({ ok: false, error: active.error ?? 'could not resolve this file\'s download URL to send as the task output' });
-    return;
-  }
-  const download = await fetch(downloadUrl);
-  if (!download.ok) {
-    res.status(502).json({ ok: false, error: `failed to fetch the reviewed file: HTTP ${download.status}` });
-    return;
-  }
-  const fileData = {
-    bytes: Buffer.from(await download.arrayBuffer()),
-    fileName: String(active.data?.file_name ?? `file-${body.fileId}`),
-    contentType: download.headers.get('content-type') ?? undefined,
-  };
-
-  // pages_with_errors travels through meta_data, merged *with* the audit
+  // Clean. pages_with_errors travels through meta_data, merged *with* the audit
   // trail only if projects.track_metadata_change=true on this project — unconfirmed
   // (§13 #3). If it's false, this write still succeeds but silently isn't audited.
-  const result = await updateFileStatus({
+  const completion = {
     projectCode: body.projectCode,
     taskUid: body.taskUid,
     fileId: body.fileId,
@@ -254,8 +274,23 @@ qualificationRouter.post('/complete', async (req, res) => {
     metaData: body.pagesWithErrors.length ? { pages_with_errors: body.pagesWithErrors } : undefined,
     nextTask: body.nextTask,
     userId: body.userId,
-    fileData,
-  });
+  };
+  let result = await updateFileStatus(completion);
+
+  // Tried without a file first, exactly as before, so every task that completed
+  // that way still does. Only a task with user_should_upload_output = 1 refuses
+  // — uw-be checks that before changing anything — and for those the reviewed
+  // file goes back as the task's output: a review doesn't change the file, and
+  // the next task only looks for its input in THIS task's output.
+  if (!result.ok && result.error?.includes(FILE_DATA_REQUIRED)) {
+    const reviewed = await fetchReviewedFile(body);
+    if (!reviewed.ok) {
+      res.status(502).json({ ok: false, error: `${result.error} ${reviewed.error}` });
+      return;
+    }
+    result = await updateFileStatus({ ...completion, fileData: reviewed.fileData });
+  }
+
   if (!result.ok) {
     res.status(502).json({ ok: false, error: result.error });
     return;
