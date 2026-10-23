@@ -86,7 +86,19 @@ app.get('/mock-download/:fileId', (req, res) => {
   res.send(bytes);
 });
 
-app.post('/update-file-status', (_req, res) => {
+app.post('/update-file-status', (req, res) => {
+  // A file a mock app token was issued for moves only from the status the
+  // call names, as in Orion; any other file is a canned success. Orion's
+  // machine route answers a refusal with 500.
+  // A multipart call (one with file_data) has no parsed body here.
+  const b = req.body ?? {};
+  const fileTask = fileTasksById.get(fileTaskId(b.file_id));
+  if (fileTask) {
+    if (fileTask.file_task_status !== b.previous_file_status || (b.file_status === 'O' && !b.onhold_reason)) {
+      return res.status(500).json({ success: false, code: 500, data: null, message: 'Something went wrong. Please try again.' });
+    }
+    fileTask.file_task_status = b.file_status;
+  }
   // Real response: data is always null on success (TaskProcessController.php:2326).
   res.json(respond(null));
 });
@@ -149,8 +161,28 @@ app.post('/update-file-meta-data', (req, res) => {
   res.json(respond(null, 'Success.'));
 });
 
-app.post('/flow-back-file-task', (_req, res) => {
-  // The one genuinely Style B endpoint — always exactly {status, error}, nothing else.
+app.post('/flow-back-file-task', (req, res) => {
+  // The one genuinely Style B endpoint — always exactly {status, error}, nothing
+  // else, and a refusal is still HTTP 200. Like Orion it refuses a file that
+  // is In Progress or Pending (put it on hold first), and a target that is not
+  // one of the file's flow_back_targets.
+  const b = req.body ?? {};
+  const missing = ['project_code', 'job_id', 'file_id', 'flow_back_from_file_task_id', 'flow_back_to_file_task_id', 'flowback_reason'].filter(
+    (key) => b[key] === undefined || b[key] === null || b[key] === '',
+  );
+  if (missing.length) return res.json({ status: false, error: `The ${missing.join(', ')} field is required.` });
+
+  const fileTask = fileTasksById.get(Number(b.flow_back_from_file_task_id));
+  if (!fileTask || fileTask.file_id !== Number(b.file_id) || IN_PROCESS.includes(fileTask.file_task_status)) {
+    return res.json({ status: false, error: 'Cannot find the current task.' });
+  }
+  const targets = flowBackTargetsByFileTaskId.get(fileTask.id) ?? [];
+  if (!targets.some((t) => t.file_task_id === Number(b.flow_back_to_file_task_id))) {
+    return res.json({ status: false, error: 'Cannot find the selected flow back to task.' });
+  }
+  // The file is queued at the earlier task and no longer at this one.
+  fileTasksById.delete(fileTask.id);
+  console.log(`[mock-uwbe] file ${b.file_id} sent back to file task ${b.flow_back_to_file_task_id}: ${b.flowback_reason}`);
   res.json({ status: true, error: '' });
 });
 
@@ -247,6 +279,12 @@ const contractsByCode = new Map();
 const fileTasksById = new Map();
 const fileTaskId = (fileId) => 900000 + Number(fileId);
 
+// Where each file task's file may be sent back to, as the contract lists it.
+/** @type {Map<number, { task_id: number, task_name: string, file_task_id: number }[]>} */
+const flowBackTargetsByFileTaskId = new Map();
+// One earlier task, unless a token asks for others (or for none).
+const defaultFlowBackTargets = (fileId) => [{ task_id: 201, task_name: 'Acquisition', file_task_id: 800000 + Number(fileId) }];
+
 // What a contract's file is when this mock run uploaded nothing for it.
 const CANNED_INPUT = Buffer.from('Orion self-test: a canned input file.\n');
 
@@ -273,7 +311,8 @@ const downloadLink = (fileId) => ({
 // Stands in for Orion's own page asking for a token: Orion checks the
 // operator's session there, and this checks nothing. Body, all optional:
 // { user_id, login_id, display_name, project_id, project_code, task_id,
-//   file_id (null for the register page), web_app, screen, ttl (seconds) }.
+//   file_id (null for the register page), web_app, screen, ttl (seconds),
+//   flow_back_targets (a list of { task_id, task_name, file_task_id }; [] for none) }.
 //
 // The launch code on a `tab` link is the same kind of code, exchanged at the
 // same address: a token made here stands in for one, as ?ct=<token> on the
@@ -288,7 +327,9 @@ app.post('/mock/app-token', (req, res) => {
   const token = randomBytes(32).toString('hex');
   const expiresAt = Date.now() + ttl * 1000;
 
+  const flowBackTargets = fileId === null ? [] : (b.flow_back_targets ?? defaultFlowBackTargets(fileId));
   if (fileId !== null) {
+    flowBackTargetsByFileTaskId.set(fileTaskId(fileId), flowBackTargets);
     fileTasksById.set(fileTaskId(fileId), {
       id: fileTaskId(fileId),
       project_id: projectId,
@@ -320,7 +361,7 @@ app.post('/mock/app-token', (req, res) => {
         task: { id: taskId, uid: b.task_uid ?? `mock-task-${taskId}`, code: 'QUALIFICATION', name: 'Qualification', type: 'M' },
         job: fileId === null ? null : { id: 87789 },
         batch: fileId === null ? null : { id: 557886, label: 'UF0001013' },
-        file: fileId === null ? null : { id: fileId },
+        file: fileId === null ? null : { id: fileId, qa_rework: null },
       },
       actor: {
         user_id: userId,
@@ -345,6 +386,8 @@ app.post('/mock/app-token', (req, res) => {
                 href: `${API_BASE_URL}/file-tasks/${fileTaskId(fileId)}/complete?project_id=${projectId}`,
               },
             },
+      // The earlier tasks the file may be sent back to (Web Apps 50).
+      flow_back_targets: flowBackTargets,
     },
   });
 
