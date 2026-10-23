@@ -776,6 +776,21 @@ p.fluid-warning {
   flex: none;
 }
 
+/* On a primary button the default spinner is primary-on-primary and vanishes. */
+.fluid-btn--primary .fluid-spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+}
+
+/* A busy button is disabled but working, so it shouldn't look switched off. */
+.fluid-btn[aria-busy='true']:disabled {
+  cursor: progress;
+  opacity: 0.85;
+}
+
 @keyframes fluid-spin {
   to {
     transform: rotate(360deg);

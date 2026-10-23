@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { TaskContext } from '../../types';
 import { registerAndUploadAcquisition, type AcquisitionResult } from '../../api-client';
 import { notifyFilesRegistered } from '../../host';
@@ -17,6 +17,17 @@ type Status =
 export function AcquisitionScreen({ taskContext }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
+  const [elapsed, setElapsed] = useState(0);
+  const uploading = status.kind === 'uploading';
+
+  // One backend call does all four steps, so there is no real progress to
+  // report; a running count tells the operator it hasn't stalled.
+  useEffect(() => {
+    if (!uploading) return;
+    setElapsed(0);
+    const timer = window.setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [uploading]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -51,17 +62,29 @@ export function AcquisitionScreen({ taskContext }: Props) {
             type="file"
             accept="application/pdf"
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-            disabled={status.kind === 'uploading'}
+            disabled={uploading}
           />
         </label>
 
         <div className="fluid-actions">
-          <button type="submit" className="fluid-btn fluid-btn--primary" disabled={!file || status.kind === 'uploading'}>
-            {status.kind === 'uploading' && <span className="fluid-spinner" />}
-            {status.kind === 'uploading' ? 'Uploading…' : 'Register & upload'}
+          <button
+            type="submit"
+            className="fluid-btn fluid-btn--primary"
+            disabled={!file || uploading}
+            aria-busy={uploading}
+          >
+            {uploading && <span className="fluid-spinner" />}
+            {uploading ? 'Registering…' : 'Register & upload'}
           </button>
         </div>
       </form>
+
+      {uploading && (
+        <div className="fluid-loading" role="status">
+          <span className="fluid-spinner" />
+          Registering {file?.name} with Orion, checking its text and uploading it… {elapsed}s
+        </div>
+      )}
 
       {status.kind === 'error' && <p className="fluid-alert fluid-alert--error">{status.message}</p>}
 
