@@ -1,11 +1,15 @@
 import { Router, type Request, type Response } from 'express';
+import type { OrionContract } from '../middleware/auth.js';
 import {
+  FLOWBACK_REASON_MAX,
   flowBackFileTask,
   getAllTasks,
+  getFileTaskStatus,
   resolveActiveFile,
   updateFileMetaData,
   updateFileStatus,
   type ActiveFileContext,
+  type FlowBackTarget,
 } from '../uwbe-client/endpoints.js';
 
 export const qualificationRouter = Router();
@@ -59,10 +63,23 @@ async function resolveQualificationFile(req: Request, res: Response): Promise<Qu
   return { file: result.data, taskUid: currentTask.task_uid };
 }
 
+/** The parts of Orion's answer a send-back reads, beyond what requireAuth types. */
+type SendBackContract = OrionContract & {
+  subject: { id: number };
+  context: { job: { id: number } | null; batch: { id: number } | null };
+  flow_back_targets?: FlowBackTarget[];
+};
+
+const flowBackTargets = (contract: OrionContract | undefined): FlowBackTarget[] =>
+  (contract as SendBackContract | undefined)?.flow_back_targets ?? [];
+
 qualificationRouter.get('/context', async (req, res) => {
   const resolved = await resolveQualificationFile(req, res);
   if (!resolved) return;
-  res.json({ ok: true, data: { ...resolved.file, task_uid: resolved.taskUid } });
+  res.json({
+    ok: true,
+    data: { ...resolved.file, task_uid: resolved.taskUid, flow_back_targets: flowBackTargets(req.orion) },
+  });
 });
 
 /**
@@ -177,6 +194,8 @@ interface CompleteBody {
   pagesWithErrors: number[];
   outcome: 'clean' | 'rework' | 'archive';
   flowbackReason?: string;
+  /** Rework only: `file_task_id` of the chosen entry in `flow_back_targets`. Not needed when there is one. */
+  flowBackToFileTaskId?: number;
   nextTask?: string;
   userId?: number;
 }
@@ -228,6 +247,84 @@ async function fetchReviewedFile(body: CompleteBody): Promise<ReviewedFile> {
   }
 }
 
+const NO_FLOW_BACK_TARGETS = 'This task has no earlier task to send files back to. Ask an admin to set Flow Back.';
+
+type SentBack = { ok: true } | { ok: false; status: number; error: string };
+
+/**
+ * Sends the file back to an earlier task, the way Orion's contract says
+ * (`docs/api/webapp-contract.md`, "Sending a file back"): resume it if it is
+ * Pending, put it on hold with the reason, then call flow-back-file-task.
+ * Every id comes from Orion's answer for this app token, and nothing is held
+ * when there is nowhere to send the file.
+ */
+async function sendBack(contract: SendBackContract, body: CompleteBody): Promise<SentBack> {
+  const { project, task, file, job, batch } = contract.context;
+  const reason = body.flowbackReason?.trim();
+  if (!file || !job) return { ok: false, status: 400, error: 'There is no file to send back.' };
+  if (!reason) return { ok: false, status: 400, error: 'flowbackReason is required for rework' };
+  if (reason.length > FLOWBACK_REASON_MAX) {
+    return { ok: false, status: 400, error: `The reason can be at most ${FLOWBACK_REASON_MAX} characters.` };
+  }
+
+  const targets = flowBackTargets(contract);
+  if (!targets.length) return { ok: false, status: 409, error: NO_FLOW_BACK_TARGETS };
+  const target =
+    body.flowBackToFileTaskId !== undefined
+      ? targets.find((t) => t.file_task_id === Number(body.flowBackToFileTaskId))
+      : targets.length === 1
+        ? targets[0]
+        : undefined;
+  if (!target) {
+    return {
+      ok: false,
+      status: 400,
+      error: body.flowBackToFileTaskId !== undefined ? 'This file cannot be sent back to that task.' : 'Choose the task to send the file back to.',
+    };
+  }
+
+  const projectCode = project.code ?? body.projectCode;
+  const taskUid = task.uid ?? body.taskUid;
+  const userId = contract.actor.user_id;
+
+  // A hold needs the file In Progress, so a paused one is resumed first.
+  const standing = await getFileTaskStatus({ projectId: project.id, taskId: task.id, fileId: file.id });
+  if (standing.ok && standing.data?.file_task_status === 'P') {
+    const resumed = await updateFileStatus({ projectCode, taskUid, fileId: file.id, previousFileStatus: 'P', fileStatus: 'I', userId });
+    if (!resumed.ok) return { ok: false, status: 502, error: `Orion did not resume the file: ${resumed.error}` };
+  }
+
+  const held = await updateFileStatus({
+    projectCode,
+    taskUid,
+    fileId: file.id,
+    previousFileStatus: 'I',
+    fileStatus: 'O',
+    onholdReason: reason,
+    userId,
+  });
+  if (!held.ok) return { ok: false, status: 502, error: `Orion did not put the file on hold: ${held.error}` };
+
+  const sent = await flowBackFileTask({
+    projectCode,
+    jobId: job.id,
+    batchId: batch?.id,
+    fileId: file.id,
+    flowBackFromFileTaskId: contract.subject.id,
+    flowBackToFileTaskId: target.file_task_id,
+    flowbackReason: reason,
+    userId,
+  });
+  if (!sent.ok) {
+    return {
+      ok: false,
+      status: 502,
+      error: `The file is on hold, but Orion did not send it back: ${sent.error} Ask a supervisor to send it back from Orion.`,
+    };
+  }
+  return { ok: true };
+}
+
 /** §6.2 step 3 — 3-way routing outcome, chosen by the operator on the qualification screen. */
 qualificationRouter.post('/complete', async (req, res) => {
   const body = req.body as CompleteBody;
@@ -244,19 +341,9 @@ qualificationRouter.post('/complete', async (req, res) => {
   }
 
   if (body.outcome === 'rework') {
-    if (!body.flowbackReason) {
-      res.status(400).json({ ok: false, error: 'flowbackReason is required for rework' });
-      return;
-    }
-    const result = await flowBackFileTask({
-      projectCode: body.projectCode,
-      taskUid: body.taskUid,
-      fileId: body.fileId,
-      flowbackReason: body.flowbackReason,
-      userId: body.userId,
-    });
+    const result = await sendBack(req.orion as SendBackContract, body);
     if (!result.ok) {
-      res.status(502).json({ ok: false, error: result.error });
+      res.status(result.status).json({ ok: false, error: result.error });
       return;
     }
     res.json({ ok: true, data: { outcome: 'rework' } });

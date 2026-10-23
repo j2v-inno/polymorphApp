@@ -394,13 +394,35 @@ export function updateFileMetaData(params: UpdateFileMetaDataParams): Promise<Uw
   });
 }
 
+/**
+ * One earlier task the file may be sent back to, from `flow_back_targets` in
+ * Orion's contract answer (Web Apps 50). `file_task_id` is the file's
+ * completed entry there: what flow-back-file-task takes as its target.
+ */
+export interface FlowBackTarget {
+  task_id: number;
+  task_name: string;
+  file_task_id: number;
+}
+
+/** Max length Orion's validator allows for `flowback_reason`. */
+export const FLOWBACK_REASON_MAX = 255;
+
+/**
+ * Every id comes from Orion's contract answer, never from the browser
+ * (Orion backend `docs/api/webapp-contract.md`, "Sending a file back").
+ */
 export interface FlowBackFileTaskParams {
   projectCode: string;
-  taskUid: string;
+  jobId: number;
+  /** Left out when the file has no batch. */
+  batchId?: number;
   fileId: number;
+  /** The file's entry at the current task: the contract's `subject.id`. */
+  flowBackFromFileTaskId: number;
+  /** `file_task_id` of the chosen FlowBackTarget. */
+  flowBackToFileTaskId: number;
   flowbackReason: string;
-  isReset?: boolean;
-  assignedTo?: number;
   /** Same user_id-defaults-to-1 gap as updateFileStatus — see its param doc. */
   userId?: number;
 }
@@ -409,6 +431,8 @@ export interface FlowBackFileTaskParams {
  * The one genuinely Style B endpoint (FileController@flow_back_file_task) — and
  * its real shape is narrower than Style B elsewhere in this doc's design: it is
  * ALWAYS exactly `{status: boolean, error: string}`, no other payload, ever.
+ * A refusal is HTTP 200 with `status: false`. It refuses a file that is In
+ * Progress or Pending, so the file is put on hold first.
  */
 export function flowBackFileTask(params: FlowBackFileTaskParams): Promise<UwbeResult<Record<string, unknown>>> {
   assertProjectCode(params.projectCode);
@@ -416,11 +440,12 @@ export function flowBackFileTask(params: FlowBackFileTaskParams): Promise<UwbeRe
     method: 'POST',
     body: {
       project_code: params.projectCode,
-      task_uid: params.taskUid,
+      job_id: params.jobId,
+      batch_id: params.batchId,
       file_id: params.fileId,
+      flow_back_from_file_task_id: params.flowBackFromFileTaskId,
+      flow_back_to_file_task_id: params.flowBackToFileTaskId,
       flowback_reason: params.flowbackReason,
-      is_reset: params.isReset,
-      assigned_to: params.assignedTo,
       user_id: params.userId,
     },
   });

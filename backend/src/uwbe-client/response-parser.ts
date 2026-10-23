@@ -98,7 +98,8 @@ function parseStyleB<T>(httpStatus: number, body: StyleBEnvelope<T>): UwbeResult
     const { status: _status, ...rest } = body;
     return { ok: true, data: rest as T, error: null, httpStatus };
   }
-  return { ok: false, data: null, error: pickErrorText(body.error) ?? 'request failed', httpStatus };
+  // An unexpected failure on Orion's side carries its text in `msg`, not `error`.
+  return { ok: false, data: null, error: pickErrorText(body.error, body.msg) ?? 'request failed', httpStatus };
 }
 
 /**
