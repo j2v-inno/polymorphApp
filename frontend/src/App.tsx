@@ -16,6 +16,7 @@ type LoadState =
 
 export default function App(props: CustomProps) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  const insideOrion = !inOwnTab(props);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,7 +98,7 @@ export default function App(props: CustomProps) {
 
   if (state.status === 'loading') {
     return (
-      <AppShell>
+      <AppShell insideOrion={insideOrion}>
         <div className="fluid-loading">
           <span className="fluid-spinner" />
           Loading task…
@@ -107,14 +108,14 @@ export default function App(props: CustomProps) {
   }
   if (state.status === 'stale') {
     return (
-      <AppShell>
+      <AppShell insideOrion={insideOrion}>
         <div className="fluid-alert fluid-alert--info">Open this task from Orion.</div>
       </AppShell>
     );
   }
   if (state.status === 'error') {
     return (
-      <AppShell>
+      <AppShell insideOrion={insideOrion}>
         <div className="fluid-alert fluid-alert--error">Error: {state.message}</div>
       </AppShell>
     );
@@ -128,7 +129,7 @@ export default function App(props: CustomProps) {
   const mode = modeRegistry[modeKey];
   if (!mode) {
     return (
-      <AppShell taskContext={state.taskContext}>
+      <AppShell taskContext={state.taskContext} insideOrion={insideOrion}>
         <div className="fluid-alert fluid-alert--error">Unknown mode: "{modeKey}"</div>
       </AppShell>
     );
@@ -136,7 +137,7 @@ export default function App(props: CustomProps) {
 
   const ModeComponent = mode.component;
   return (
-    <AppShell activeMode={modeKey} taskContext={state.taskContext}>
+    <AppShell activeMode={modeKey} taskContext={state.taskContext} insideOrion={insideOrion}>
       <ModeComponent taskContext={state.taskContext} />
     </AppShell>
   );

@@ -25,6 +25,9 @@
   --fl-error-soft: #fef2f2;
   --fl-error-border: #f7c6c6;
 
+  /* Text and icons drawn on a filled colour (a primary button, an alert's badge). */
+  --fl-on-fill: #ffffff;
+
   --fl-radius-sm: 6px;
   --fl-radius-md: 10px;
   --fl-radius-lg: 18px;
@@ -33,6 +36,41 @@
   --fl-shadow-md: 0 12px 32px -12px rgba(30, 34, 66, 0.22);
 
   --fl-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Orion puts `dark` on <html> in its dark theme. Mounted, that is this page too. */
+:root.dark {
+  --fl-bg: #0f1117;
+  --fl-surface: #171a23;
+  --fl-border: #2b3040;
+  --fl-text: #e6e8f0;
+  --fl-text-muted: #a3a8bb;
+  --fl-text-faint: #737891;
+
+  --fl-primary: #8b93f8;
+  --fl-primary-dark: #a9b1fb;
+  --fl-primary-soft: #23264a;
+
+  --fl-success: #4ade80;
+  --fl-success-soft: #10291b;
+  --fl-success-border: #1f5233;
+
+  --fl-warning: #fbbf24;
+  --fl-warning-soft: #2a210a;
+  --fl-warning-border: #5e4714;
+
+  --fl-error: #f87171;
+  --fl-error-soft: #2d1416;
+  --fl-error-border: #5e2529;
+
+  --fl-on-fill: #12141c;
+
+  --fl-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --fl-shadow-md: 0 12px 32px -12px rgba(0, 0, 0, 0.6);
+}
+
+:root.dark .fluid-app {
+  color-scheme: dark;
 }
 
 #app,
@@ -50,7 +88,7 @@
 
 .fluid-app {
   min-height: 100vh;
-  background: radial-gradient(1200px 480px at 50% -120px, #eef0fe 0%, var(--fl-bg) 55%);
+  background: radial-gradient(1200px 480px at 50% -120px, var(--fl-primary-soft) 0%, var(--fl-bg) 55%);
   display: flex;
   flex-direction: column;
 }
@@ -107,6 +145,31 @@
   font-weight: 600;
 }
 
+/* Inside Orion: Orion's header is above, and its File In Process panel floats
+   over the right-hand side (400 px, full height), so the card keeps clear of it. */
+.fluid-app--in-orion {
+  background: var(--fl-bg);
+}
+
+.fluid-context-line {
+  padding: 8px 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fl-text-muted);
+  background: var(--fl-surface);
+  border-bottom: 1px solid var(--fl-border);
+}
+
+.fluid-app--in-orion .fluid-main {
+  padding: 24px 436px 48px 20px;
+}
+
+@media (max-width: 1000px) {
+  .fluid-app--in-orion .fluid-main {
+    padding-right: 20px;
+  }
+}
+
 /* ---------------------------------------------------------------- stepper */
 
 .fluid-stepper {
@@ -150,7 +213,7 @@
 .fluid-step--done .fluid-step__circle {
   background: var(--fl-primary);
   border-color: var(--fl-primary);
-  color: #fff;
+  color: var(--fl-on-fill);
 }
 
 .fluid-step--done .fluid-step__label {
@@ -257,6 +320,8 @@
 .fluid-inline-field input {
   flex: 1;
   font: inherit;
+  color: var(--fl-text);
+  background: var(--fl-surface);
   padding: 10px 12px;
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-md);
@@ -347,7 +412,7 @@
 
 .fluid-btn--primary {
   background: var(--fl-primary);
-  color: #fff;
+  color: var(--fl-on-fill);
 }
 
 .fluid-btn--primary:not(:disabled):hover {
@@ -424,7 +489,7 @@
   min-width: 18px;
   border-radius: 999px;
   background: var(--fl-error);
-  color: #fff;
+  color: var(--fl-on-fill);
   font-size: 0.72rem;
 }
 
@@ -445,7 +510,7 @@
   min-width: 18px;
   border-radius: 999px;
   background: var(--fl-warning);
-  color: #fff;
+  color: var(--fl-on-fill);
   font-size: 0.72rem;
 }
 
@@ -466,7 +531,7 @@
   min-width: 18px;
   border-radius: 999px;
   background: var(--fl-success);
-  color: #fff;
+  color: var(--fl-on-fill);
   font-size: 0.72rem;
 }
 
@@ -485,7 +550,7 @@
   min-width: 18px;
   border-radius: 999px;
   background: var(--fl-primary);
-  color: #fff;
+  color: var(--fl-on-fill);
   font-size: 0.72rem;
   font-style: italic;
 }
@@ -686,6 +751,7 @@ p.fluid-warning {
 .fluid-metadata-row input {
   flex: 1;
   font: inherit;
+  color: var(--fl-text);
   padding: 8px 10px;
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-sm);
@@ -781,8 +847,8 @@ p.fluid-warning {
   width: 14px;
   height: 14px;
   border-width: 2px;
-  border-color: rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
+  border-color: color-mix(in srgb, var(--fl-on-fill) 35%, transparent);
+  border-top-color: var(--fl-on-fill);
 }
 
 /* A busy button is disabled but working, so it shouldn't look switched off. */
