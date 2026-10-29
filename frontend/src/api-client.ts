@@ -1,17 +1,21 @@
 import { BACKEND_URL } from './config';
+import { getAppToken, NoAppTokenError, tabSessionOver } from './host';
+import type { LaunchedContext } from './task-context';
 import type { TaskContext } from './types';
 
 /** Calls the Fluid App Backend only — this app never talks to uw-be from the browser (§2). */
 
-let apiToken: string | undefined;
+// What the operator reads when Orion issues no app token. Nothing is sent
+// without one and nothing is retried: they act on it, or reopen the task.
+const NO_APP_TOKEN: Record<string, string> = {
+  file_not_yours: 'You no longer have this file in process in Orion. Reopen it from Orion to carry on.',
+  cannot_register: 'You can no longer register files at this task in Orion.',
+  app_inactive: 'This app has been switched off in Orion. Ask your Orion admin.',
+};
 
-export function setApiToken(token: string | undefined): void {
-  apiToken = token;
-}
-
-/** §10 unmount hygiene — call from single-spa-entry's unmount lifecycle. */
-export function clearApiToken(): void {
-  apiToken = undefined;
+function noAppTokenMessage(err: unknown): string {
+  const reason = err instanceof NoAppTokenError ? err.reason : 'unavailable';
+  return NO_APP_TOKEN[reason] ?? `Orion did not confirm who you are (${reason}). Open this task from Orion and try again.`;
 }
 
 export interface BackendResult<T> {
@@ -44,8 +48,15 @@ async function callBackend<T>(path: string, opts: RequestOptions = {}): Promise<
     }
   }
 
-  const headers: Record<string, string> = {};
-  if (apiToken) headers['x-fluid-parcel-token'] = apiToken;
+  // Asked before every request and never kept here: Orion's page hands back
+  // the one it holds, and a fresh one when that is about to expire.
+  let appToken: string;
+  try {
+    appToken = await getAppToken();
+  } catch (err) {
+    return { ok: false, data: null, error: noAppTokenMessage(err) };
+  }
+  const headers: Record<string, string> = { Authorization: `Bearer ${appToken}` };
 
   let body: BodyInit | undefined;
   if (opts.formData) {
@@ -56,12 +67,84 @@ async function callBackend<T>(path: string, opts: RequestOptions = {}): Promise<
   }
 
   const response = await fetch(url.toString(), { method: opts.method ?? 'GET', headers, body });
-  const json = (await response.json().catch(() => ({}))) as { ok?: boolean; data?: T; error?: string };
+  const json = (await response.json().catch(() => ({}))) as { ok?: boolean; data?: T; error?: string; code?: string };
+
+  // The server ended this tab's session: the operator held, finished or sent
+  // back the file, or the session ran out. The tab says so and stops, as it
+  // does for a stale link; the screen that made this call is on its way out.
+  if (json.code === 'stale_link' && tabSessionOver()) {
+    return { ok: false, data: null, error: 'Open this task from Orion.' };
+  }
 
   if (!response.ok || json.ok === false) {
     return { ok: false, data: null, error: json.error ?? `request failed (HTTP ${response.status})` };
   }
   return { ok: true, data: json.data ?? null, error: null };
+}
+
+// A tab keeps its session for a reload, and only for itself: sessionStorage
+// is per tab, so a link copied into another tab or browser starts from the
+// code again and Orion is asked afresh.
+const tabSessionKey = (ct: string) => `transapp:tab-session:${ct}`;
+
+function storedTabSession(ct: string): string | undefined {
+  try {
+    return window.sessionStorage.getItem(tabSessionKey(ct)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export interface LaunchResult extends BackendResult<{ session: string; context: LaunchedContext }> {
+  /**
+   * The link has gone stale: Orion does not know the code or it has expired,
+   * or the operator no longer has the work. Nothing broke, and the tab does
+   * not ask again with the same code. Unset for every other failure.
+   */
+  stale?: boolean;
+}
+
+/**
+ * Opened by Orion in its own tab: hands the launch code from the link to this
+ * app's server, which exchanges it with Orion. The answer is a session for
+ * this tab (the bearer for every call after) and the work Orion opened the
+ * tab for. Sent with no bearer: this is where the tab gets one.
+ */
+export async function startFromLaunchCode(ct: string): Promise<LaunchResult> {
+  const url = BACKEND_URL.replace(/\/+$/, '') + '/api/launch';
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ct, session: storedTabSession(ct) }),
+    });
+  } catch {
+    return { ok: false, data: null, error: 'Could not reach this app\'s server.' };
+  }
+
+  const json = (await response.json().catch(() => ({}))) as {
+    ok?: boolean;
+    data?: { session: string; context: LaunchedContext };
+    error?: string;
+    code?: string;
+  };
+  if (!response.ok || json.ok === false || !json.data) {
+    return {
+      ok: false,
+      data: null,
+      error: json.error ?? `request failed (HTTP ${response.status})`,
+      stale: json.code === 'stale_link',
+    };
+  }
+
+  try {
+    window.sessionStorage.setItem(tabSessionKey(ct), json.data.session);
+  } catch {
+    // Without it a reload exchanges the code again, which Orion allows.
+  }
+  return { ok: true, data: json.data, error: null };
 }
 
 /** §3.3 — re-validate a raw context pointer before rendering any mode screen. */
@@ -96,6 +179,9 @@ export function registerAndUploadAcquisition(
   // jobId/batchId don't exist yet for a fresh "register new file" launch (no file yet) —
   // taskId + a timestamp is unique enough for this identifier's purpose.
   formData.append('fileUniqueIdentifier', `${taskContext.taskId}-${file.name}-${Date.now()}`);
+  // The operator, so the registration is theirs: Orion's register page lists
+  // what an operator registered by the file_task_users row this creates.
+  if (Number.isFinite(taskContext.userId)) formData.append('userId', String(taskContext.userId));
   return callBackend<AcquisitionResult>('/api/acquisition/register-and-upload', { method: 'POST', formData });
 }
 
@@ -190,6 +276,13 @@ export function getBulkRegistrationStatus(sheetId: string): Promise<BackendResul
 // §6.2 /qualification
 // ---------------------------------------------------------------------------
 
+/** An earlier task the file may be sent back to, as Orion lists it in the task's Flow Back settings. */
+export interface FlowBackTarget {
+  task_id: number;
+  task_name: string;
+  file_task_id: number;
+}
+
 export interface QualificationContext {
   id: number;
   task_uid: string;
@@ -197,6 +290,8 @@ export interface QualificationContext {
   /** Confirmed field name from get-task-next-file-with-start — NOT file_download_url. Can be null even for a legitimately-uploaded file; see backend/src/routes/qualification.ts. */
   input_download_url?: string | null;
   meta_data?: Record<string, unknown> | null;
+  /** Where Rework may send the file. Empty when the task has no Flow Back settings. */
+  flow_back_targets?: FlowBackTarget[];
 }
 
 export function getQualificationContext(taskContext: TaskContext, workflowCode: string): Promise<BackendResult<QualificationContext>> {
@@ -254,32 +349,46 @@ export function completeQualification(
   outcome: QualificationOutcome,
   pagesWithErrors: number[],
   flowbackReason?: string,
+  flowBackToFileTaskId?: number,
 ): Promise<BackendResult<{ outcome: QualificationOutcome }>> {
   return callBackend('/api/qualification/complete', {
     method: 'POST',
     body: {
+      projectId: taskContext.projectId,
       projectCode: taskContext.projectCode,
       workflowId: taskContext.workflowId,
+      taskId: taskContext.taskId,
       taskUid,
       fileId: taskContext.fileId,
+      jobId: taskContext.jobId,
       pagesWithErrors,
       outcome,
       flowbackReason,
+      flowBackToFileTaskId,
       userId: taskContext.userId,
     },
   });
 }
 
 /**
- * Fetches the raw text of a file's own input_download_url via the backend
- * (avoids the browser hitting CORS on the presigned S3/MinIO URL directly).
- * Used for the structured-content viewer when meta_data.content_format is
- * 'xml'|'json' instead of the PDF iframe.
+ * Fetches the raw text of this task's file via the backend (avoids the browser
+ * hitting CORS on the presigned S3/MinIO URL directly). Used for the
+ * structured-content viewer when meta_data.content_format is 'xml'|'json'
+ * instead of the PDF iframe. Sends the task context, not a URL — the backend
+ * resolves the file's download URL itself, so a caller can't point it anywhere
+ * else.
  */
-export function fetchQualificationContent(url: string): Promise<BackendResult<{ content: string }>> {
-  return callBackend<{ content: string }>('/api/qualification/content-proxy', {
+export function fetchQualificationContent(taskContext: TaskContext, workflowCode: string): Promise<BackendResult<{ content: string }>> {
+  return callBackend<{ content: string }>('/api/qualification/content', {
     method: 'GET',
-    query: { url },
+    query: {
+      projectId: taskContext.projectId,
+      projectCode: taskContext.projectCode,
+      workflowCode,
+      taskId: taskContext.taskId,
+      fileId: taskContext.fileId,
+      jobId: taskContext.jobId,
+    },
   });
 }
 

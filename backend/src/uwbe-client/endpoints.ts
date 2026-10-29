@@ -91,6 +91,14 @@ export interface UpdateFileStatusParams {
   onholdReason?: string;
   nextTask?: string;
   /**
+   * The task's output file. uw-be refuses to complete a task with
+   * `user_should_upload_output = 1` without one ("File data is required to
+   * complete this task."), and it is also what the next task finds as its
+   * input — uw-be only looks in the immediately previous task's output.
+   * Sending it switches the request to multipart.
+   */
+  fileData?: { bytes: Buffer; fileName: string; contentType?: string };
+  /**
    * uw-be defaults this to 1 (system) when omitted — a real gap: the file's
    * open file_task_users session belongs to whoever actually claimed it
    * (uw-fe's real "Assign" action claims as the logged-in user), and the
@@ -108,20 +116,32 @@ export function updateFileStatus(params: UpdateFileStatusParams): Promise<UwbeRe
   if (params.fileStatus === 'O' && !params.onholdReason) {
     throw new Error('onholdReason is required when fileStatus is "O" (FLUID_APP_DEV_CONTEXT.md §6.1)');
   }
-  return callUwbe<null>('update-file-status', {
-    method: 'POST',
-    body: {
-      project_code: params.projectCode,
-      task_uid: params.taskUid,
-      file_id: params.fileId,
-      previous_file_status: params.previousFileStatus,
-      file_status: params.fileStatus,
-      meta_data: params.metaData,
-      onhold_reason: params.onholdReason,
-      next_task: params.nextTask,
-      user_id: params.userId,
-    },
-  });
+  const fields = {
+    project_code: params.projectCode,
+    task_uid: params.taskUid,
+    file_id: params.fileId,
+    previous_file_status: params.previousFileStatus,
+    file_status: params.fileStatus,
+    meta_data: params.metaData,
+    onhold_reason: params.onholdReason,
+    next_task: params.nextTask,
+    user_id: params.userId,
+  };
+
+  if (!params.fileData) {
+    return callUwbe<null>('update-file-status', { method: 'POST', body: fields });
+  }
+
+  // Multipart can't nest objects, so meta_data goes as a JSON string — which
+  // update_file_status json_decodes when it arrives as one.
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined) continue;
+    formData.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+  }
+  const { bytes, fileName, contentType } = params.fileData;
+  formData.append('file_data', new Blob([bytes], { type: contentType ?? 'application/octet-stream' }), fileName);
+  return callUwbe<null>('update-file-status', { method: 'POST', formData });
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +254,41 @@ export async function getTaskOngoingFile(params: GetTaskOngoingFileParams): Prom
   return { ...result, data: result.data.file };
 }
 
+export interface GetFileTaskStatusParams {
+  projectId: number;
+  taskId: number;
+  fileId: number;
+}
+
+export interface FileTaskStatus {
+  /** Orion's id of the operator who has the file at the task. Stays set after a hold or a completion. */
+  handled_by?: number | null;
+  /** The file's status at the task (`I`, `P`, `O`, `C`, ...). NOT `file_status`, which this row does not carry. */
+  file_task_status?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Style A (TaskProcessController@get_file_task_status). Where a file stands
+ * at a task right now: `data: { file: {...} }`, unwrapped here. Confirmed
+ * against a live call (2026-10-13) for a Web App task: `handled_by` and
+ * `file_task_status` both reach the answer. It answers 404 ("File task not
+ * found.") when the file is not active at the task, and 400 ("Invalid
+ * file.") for a file the project does not have.
+ */
+export async function getFileTaskStatus(params: GetFileTaskStatusParams): Promise<UwbeResult<FileTaskStatus>> {
+  const result = await callUwbe<{ file: FileTaskStatus }>('get-file-task-status', {
+    method: 'GET',
+    query: {
+      project_id: params.projectId,
+      task_id: params.taskId,
+      file_id: params.fileId,
+    },
+  });
+  if (!result.ok || !result.data) return { ...result, data: null };
+  return { ...result, data: result.data.file };
+}
+
 export interface ResolveActiveFileParams {
   projectId: number;
   projectCode: string;
@@ -339,13 +394,35 @@ export function updateFileMetaData(params: UpdateFileMetaDataParams): Promise<Uw
   });
 }
 
+/**
+ * One earlier task the file may be sent back to, from `flow_back_targets` in
+ * Orion's contract answer (Web Apps 50). `file_task_id` is the file's
+ * completed entry there: what flow-back-file-task takes as its target.
+ */
+export interface FlowBackTarget {
+  task_id: number;
+  task_name: string;
+  file_task_id: number;
+}
+
+/** Max length Orion's validator allows for `flowback_reason`. */
+export const FLOWBACK_REASON_MAX = 255;
+
+/**
+ * Every id comes from Orion's contract answer, never from the browser
+ * (Orion backend `docs/api/webapp-contract.md`, "Sending a file back").
+ */
 export interface FlowBackFileTaskParams {
   projectCode: string;
-  taskUid: string;
+  jobId: number;
+  /** Left out when the file has no batch. */
+  batchId?: number;
   fileId: number;
+  /** The file's entry at the current task: the contract's `subject.id`. */
+  flowBackFromFileTaskId: number;
+  /** `file_task_id` of the chosen FlowBackTarget. */
+  flowBackToFileTaskId: number;
   flowbackReason: string;
-  isReset?: boolean;
-  assignedTo?: number;
   /** Same user_id-defaults-to-1 gap as updateFileStatus — see its param doc. */
   userId?: number;
 }
@@ -354,6 +431,8 @@ export interface FlowBackFileTaskParams {
  * The one genuinely Style B endpoint (FileController@flow_back_file_task) — and
  * its real shape is narrower than Style B elsewhere in this doc's design: it is
  * ALWAYS exactly `{status: boolean, error: string}`, no other payload, ever.
+ * A refusal is HTTP 200 with `status: false`. It refuses a file that is In
+ * Progress or Pending, so the file is put on hold first.
  */
 export function flowBackFileTask(params: FlowBackFileTaskParams): Promise<UwbeResult<Record<string, unknown>>> {
   assertProjectCode(params.projectCode);
@@ -361,11 +440,12 @@ export function flowBackFileTask(params: FlowBackFileTaskParams): Promise<UwbeRe
     method: 'POST',
     body: {
       project_code: params.projectCode,
-      task_uid: params.taskUid,
+      job_id: params.jobId,
+      batch_id: params.batchId,
       file_id: params.fileId,
+      flow_back_from_file_task_id: params.flowBackFromFileTaskId,
+      flow_back_to_file_task_id: params.flowBackToFileTaskId,
       flowback_reason: params.flowbackReason,
-      is_reset: params.isReset,
-      assigned_to: params.assignedTo,
       user_id: params.userId,
     },
   });

@@ -41,3 +41,27 @@ export function resolveModeFromPath(pathname: string = window.location.pathname)
   const segment = segments[segments.length - 1];
   return segment ? PATH_TO_TASK_CODE[segment.toLowerCase()] : undefined;
 }
+
+/**
+ * Mounted under a host, the screen arrives as Orion's `app_screen` prop instead
+ * of a URL path — and its values are these same path keys, declared on the
+ * app's registry row in Orion. An undeclared key comes back unchanged, so
+ * App.tsx shows "Unknown mode" rather than silently falling back to uw-be's
+ * task `code` column (the lookup that rendered the wrong screen in production).
+ */
+export function taskCodeForScreen(screen: string): string {
+  return PATH_TO_TASK_CODE[screen.toLowerCase()] ?? screen;
+}
+
+/**
+ * Opened by Orion in a tab or an iframe, the same key arrives as `?app_screen=`
+ * on this app's own page address: a Web App has one page address for every
+ * task, so the screen can't live in its path. Unlike the prop above, an
+ * undeclared or absent key returns undefined, leaving the caller on the path /
+ * task_code lookup it had before — a typed-address launch sends no app_screen
+ * and must keep resolving exactly as it did.
+ */
+export function resolveModeFromQuery(search: string = window.location.search): string | undefined {
+  const screen = new URLSearchParams(search).get('app_screen');
+  return screen ? PATH_TO_TASK_CODE[screen.toLowerCase()] : undefined;
+}

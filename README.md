@@ -36,7 +36,15 @@ pnpm dev:frontend    # http://localhost:9100 — self-mounting standalone dev ha
 ```
 
 Then either drive the frontend directly (see below) or hit the backend with curl to
-walk the whole pipeline against a real PDF, exactly as the frontend would:
+walk the whole pipeline against a real PDF, exactly as the frontend would.
+
+**Every `/api` call needs an app token**, as `Authorization: Bearer`. Under Orion
+the screen gets it from Orion's page. Against the mock, ask the mock for one, for
+the task and file the call is about, and add `-H "Authorization: Bearer $TOKEN"` to
+each curl below (see "Trying the token check against the mock"). The standalone
+frontend harness has no Orion page beside it: open it with a launch code on its
+address (`?ct=`, see "Opening it in its own tab"), or it says "Open this task
+from Orion" and makes no call.
 
 ```bash
 # 1. acquisition — register, gate-check, upload, complete
@@ -77,6 +85,149 @@ wiring, not to model uw-be's actual behavior/bugs (§7). Edit
 `get-task-ongoing-file`'s `meta_data.pages_with_errors` in `server.js` to test the
 manual-fix routing path in step 3.
 
+### Trying the token check against the mock
+
+The mock stands in for Orion's side of the app token, so the backend's check
+(`backend/src/middleware/auth.ts`) can be tried with no Orion. It is not a
+self-test page: nothing here fails a screen that never asks for a token, or a
+server that skips the check.
+
+| Address on the mock | Stands in for |
+|---|---|
+| `POST /mock/app-token` | Orion's page handing out a code (an app token, or the launch code on a `tab` link) |
+| `GET /v1/webapp/contract/{ct}` | The exchange. Its answer has every part of Orion's contract version 1.0 |
+| `GET /v1/files/{file}/download-url`, `POST /v1/file-tasks/{file_task}/complete` | The two addresses the answer hands out under `actions` |
+| `GET /get-file-task-status` | Orion's look-up of who has a file at a task, and its status there |
+| `POST /mock/app-token/{ct}/hold` | The operator putting the file on hold. It works on a code that has expired too |
+
+The exchange, the two actions and the look-up answer `401` with no `api-token`
+header. They check that one was sent, not which.
+
+```bash
+# Stands in for Orion's page: a token for operator 1, on file 1001 at task 204.
+# Optional fields: user_id, task_id, file_id (null = register page), project_id,
+# web_app, ttl (seconds).
+TOKEN=$(curl -s -X POST http://localhost:4200/mock/app-token -H "Content-Type: application/json" \
+  -d '{"task_id":204,"file_id":1001}' | node -pe 'JSON.parse(require("fs").readFileSync(0)).data.token')
+
+# Accepted: the token's own task and file.
+curl -X POST http://localhost:4100/api/task-context/resolve -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"projectId":334,"projectCode":"MOCK","taskId":204,"fileId":1001,"taskCode":"QUALIFICATION"}'
+
+# Refused, each for its own reason:
+#   no Authorization header                         -> 401
+#   a made-up token                                 -> 401 (Orion does not know it)
+#   a token made with "ttl":1, a second later       -> 401 (expired)
+#   a token made with "web_app":"some-other-app"    -> 403
+#   the good token with another taskId or fileId    -> 403
+#   after POST /mock/app-token/$TOKEN/hold          -> 401 for a token not yet seen
+```
+
+The backend keeps Orion's answer until the token expires, so a hold only shows on
+a token it has not checked before. That is for a token from Orion's page (mounted
+or framed). A tab's session asks again: see "Opening it in its own tab".
+
+The answer is Orion's contract version 1.0, with canned values: the task's
+settings (`parameters`; its `api_key` stands in for a secret and is not one), the
+file with a download link (`inputs`), the quota (`constraints`), and the addresses
+to call next (`actions`), each starting at `api_base_url`. The shape is the Orion
+backend's `docs/api/webapp-contract.md` and `webapp-contract.v1.0.schema.json`.
+
+```bash
+# The whole answer.
+curl -s http://localhost:4200/v1/webapp/contract/$TOKEN -H "api-token: anything"
+
+# Follow what it hands out. Neither is a dead link.
+#   data.inputs[0].download_url        -> the file's bytes (canned text, or what this mock run uploaded)
+#   data.actions.download_url.href     -> GET, a fresh { download_url, expires_at }
+#   data.actions.complete.href         -> POST, finishes the file: the exchange then answers 410
+```
+
+Every contract the mock answers names its issuer as `Orion self-test`. Start the
+backend with `ORION_ISSUER` set to a real Orion's address and it refuses all of
+them. **A real deployment always sets `ORION_ISSUER`**, so no test token can ever
+stand in for Orion's.
+
+### Opening it in its own tab
+
+When an Orion task opens this app in a new tab, the link carries one thing:
+`?ct=<launch code>`. Nothing about the task or the operator is on it.
+
+1. The screen posts the code to this backend once, at `POST /api/launch`.
+2. The backend exchanges it with Orion, using `UWBE_API_TOKEN`, at the same
+   address it uses for an app token (`GET v1/webapp/contract/{ct}`), and checks
+   the answer is for this Web App, from the Orion it trusts.
+3. It answers with the work Orion opened the tab for (the task, the file, the
+   operator and the screen) and a session for the tab. The screen takes its
+   screen from that answer, and sends the session as `Authorization: Bearer` on
+   every call after.
+
+Orion's code lasts an hour and is never renewed, so the backend keeps its own
+session with the tab (`TAB_SESSION_MINUTES`, 8 hours by default). The tab keeps
+the session across a reload. A link copied into another tab or browser starts
+from the code again, and Orion is asked afresh: once the operator has held or
+finished the file, it opens nothing.
+
+**The session asks Orion again about every 10 minutes** (`TAB_RECHECK_MINUTES`),
+when the tab's next call arrives after that time. So a file put on hold,
+completed or sent back closes the tab within 10 minutes, at any point in the 8
+hours.
+
+| When | The backend asks Orion | The session goes on when |
+|---|---|---|
+| Orion still knows the launch code (its first hour) | the exchange again, `GET v1/webapp/contract/{ct}` | Orion answers `200`. `410` ends it |
+| Orion answers `404` for the code (the hour is up) | about the file itself, `GET get-file-task-status`, with `UWBE_API_TOKEN`. The code is not exchanged again | the file is still handled by the session's operator (`handled_by`) and In Progress or Pending at the task (`file_task_status` `I` or `P`). A `404` or `400` there ends it |
+| the same, and the session has no file (Register New File) | nothing: there is no file to ask about | never. It ends with its code |
+
+When the session ends, the call that found out answers `401` with
+`code: stale_link` and Orion's reason, the screen is replaced by "Open this task
+from Orion", and the tab makes no call after. The same happens when the 8 hours
+run out or the backend restarts.
+
+Two things do not end a session:
+
+- **Orion cannot be reached**, or answers `429` or `5xx`. The call goes on and
+  the next one asks again: a network fault does not cut an operator off.
+- **Orion refuses `UWBE_API_TOKEN`** (`401` or `403`). That call answers `502`
+  and the next one asks again.
+
+**A link that has gone stale gets one message, "Open this task from Orion", and
+the tab stops.** It loads no task data, does not ask again with the same code,
+and does not send the tab anywhere. Three cases, one message:
+
+| The link | Orion's answer | `POST /api/launch` |
+|---|---|---|
+| has no `ct` | not asked | not called: the screen stops by itself (the route answers `400`, `reason: no_code`) |
+| has a code Orion does not know, or one that has expired | `404 unknown_code` | `401`, `code: stale_link`, `reason: unknown_code` |
+| has a code for work the operator no longer has | `410 file_not_yours` or `cannot_register` | `401`, `code: stale_link`, `reason:` Orion's own |
+
+`code: stale_link` is how the screen tells a stale link from something that
+broke. Any other failure (Orion unreachable, `UWBE_API_TOKEN` refused, a code
+issued for another Web App) carries no `code` and shows as an error, as before.
+This is the tab only: mounted or framed, a refused app token is still each
+screen's own error. (The backend marks that refusal `stale_link` too; only a tab
+acts on it.)
+
+Against the mock, a token from `/mock/app-token` stands in for a launch code:
+
+```bash
+CT=$(curl -s -X POST http://localhost:4200/mock/app-token -H "Content-Type: application/json" \
+  -d '{"task_id":204,"file_id":1001,"screen":"qualification","ttl":3600}' \
+  | node -pe 'JSON.parse(require("fs").readFileSync(0)).data.token')
+open "http://localhost:9100/?ct=$CT"
+
+# The same link once the operator has held or finished the file: stale.
+curl -s -X POST "http://localhost:4200/mock/app-token/$CT/hold"
+open "http://localhost:9100/?ct=$CT"   # in a new tab: "Open this task from Orion"
+```
+
+To watch the re-check without waiting, start the backend with a short one
+(`TAB_RECHECK_MINUTES=0.1` is six seconds), open a tab from a code, hold it as
+above, wait, and click in the first tab: the screen gives way to "Open this task
+from Orion". For the part after the code's hour, make the code with a short life
+(`"ttl": 20`): the tab keeps working once it has run out, until the hold.
+
 ### Driving the frontend in a browser instead of curl
 
 `pnpm dev:frontend` runs `webpack serve --env standalone`, which uses
@@ -84,6 +235,11 @@ manual-fix routing path in step 3.
 self-mounts the app with `customProps: {}` (verified — see the generated
 `index.html`'s inline script). Since no `taskCode` is supplied, `App.tsx` falls back
 to parsing the URL (§3.2) — append the launch query params to drive a screen, e.g.:
+
+> **In a tab of its own this no longer drives a screen.** A tab opens from a
+> launch code and reads nothing else from its address: with no `ct` it says
+> "Open this task from Orion" and stops. The plain params below are still read
+> in an iframe, where the bearer comes from Orion's page.
 
 ```
 http://localhost:9100/wa/bulk-registration?project_id=2&project_code=TRANSAPPTEST&workflow_id=6&workflow_code=OTS&task_id=14&task_uid=16899866e6904edeae65992fbfacd619&user_id=7
@@ -396,8 +552,11 @@ guessing silently:
 | Qualification PDF preview + custom metadata editor | Implemented — native browser `<iframe>` preview (`input_download_url#page=N`) and a free-form key/value editor over `update-file-meta-data`, both additions beyond §6.2's original scope |
 | `/transformation` — PDF text → structured XML/JSON | Implemented — see "Transformation" below. **Deliberately reverses FLUID_APP_DEV_CONTEXT.md §1/§6.4/§9.2/§13#5**, which all state RAG transformation is owned by a separate app entirely, not this one. Brought in-house per direct user decision (2026-08-15) — flagged here explicitly rather than silently overriding the doc's stated scope, same as every other deviation in this table |
 | `/download` link resolution (§6.4) | Implemented for a known set of file IDs. How this screen discovers *all* sibling split-file IDs from one launch context isn't specified in §6 — see the TODO in `frontend/src/modes/download/DownloadScreen.tsx` |
-| Parcel-mode auth (§10) | Backend checks token *presence* (`x-fluid-parcel-token`), not validity — the validation mechanism isn't specified upstream |
-| Standalone-mode auth (§13 #6) | Not implemented — backend returns `501` unless `ALLOW_UNAUTHENTICATED_STANDALONE=true` (local dev only) |
+| Auth when Orion mounts or frames the app | Done. The screen asks Orion's page for an app token before every call (`getAppToken()` when mounted, `orion:get-app-token` by message in an iframe) and sends it as `Authorization: Bearer`. The backend exchanges it with Orion using `UWBE_API_TOKEN`, and refuses a token for another Web App, or a request naming another operator, task or file (`backend/src/middleware/auth.ts`) |
+| Auth in its own tab | Done. Orion opens the tab with a launch code (`?ct=`) and nothing else on the link. The backend exchanges it with Orion once and keeps its own session with the tab; the screen takes the task, the file, the operator and its screen from that answer (`backend/src/routes/launch.ts`, "Opening it in its own tab") |
+| A stale link in its own tab | Done. No code, a code Orion does not know or that has expired, or work the operator no longer has: the tab says "Open this task from Orion" and stops, with no call after and no redirect. The backend passes Orion's refusal on as `code: stale_link` (`backend/src/routes/launch.ts`, "Opening it in its own tab") |
+| A tab at work whose file is held, finished or sent back | Done. The tab's session asks Orion again about every 10 minutes (`TAB_RECHECK_MINUTES`): the launch code while Orion knows it, the file itself after its hour. When the operator no longer has the file the session ends and the screen gives way to "Open this task from Orion"; so it does when the session's 8 hours run out (`backend/src/middleware/auth.ts`, "Opening it in its own tab"). A session with no file ends with its code's hour |
+| Standalone with no launch code | **Nothing opens.** There is no Orion page to ask for an app token and no code to exchange, and the switch that let a standalone page in with no sign-in is gone. The screen says "Open this task from Orion" and makes no call, also for a link that still carries the task's fields in plain text. A direct `/api` call with no bearer still answers `401`; the backend's check can be tried without Orion: see "Trying the token check against the mock" |
 
 Do not silently resolve any of the above without checking with the doc's named owner
 first — that's the whole point of flagging them inline instead of guessing.
@@ -553,9 +712,12 @@ posture the rest of this app already takes toward things like archiving (§13 #2
   on, for the same reason). A real fast-follow, not done here.
 - **Qualification's viewer**: `meta_data.content_format` (`'xml'|'json'`, written by
   this task) switches `QualificationScreen.tsx` from its PDF `<iframe>`/page-nav to a
-  `<pre className="fluid-content-viewer">` showing the raw text, fetched via a new
-  `GET /api/qualification/content-proxy?url=` (server-side fetch, same
-  CORS-avoidance technique `batch-split.ts` already uses for parent bytes). No page
+  `<pre className="fluid-content-viewer">` showing the raw text, fetched via
+  `GET /api/qualification/content` (server-side fetch, same CORS-avoidance
+  technique `batch-split.ts` already uses for parent bytes). It takes the same
+  task-context query as `/context` and resolves the file's download URL itself —
+  it replaced `/content-proxy?url=`, which fetched any caller-supplied URL (an
+  SSRF hole). No page
   concept for structured content, so the per-page error-flagging UI is skipped in
   that branch and `pagesWithErrors` is always sent empty — the 3-way clean/rework/
   archive outcome buttons are unchanged.

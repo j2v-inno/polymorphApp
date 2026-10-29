@@ -27,12 +27,44 @@ export interface TaskContext {
   jobName?: string;
   batchName?: string;
   fileName?: string;
-  /** Parcel mode only (§10) — never present in the standalone-mode URL. */
-  apiToken?: string;
 }
 
-/** Whatever single-spa passes to mount()/renderReactNode — our TaskContext fields plus single-spa's own reserved props. */
-export type CustomProps = Partial<TaskContext> & {
+/**
+ * The props Orion passes to mount() — its published task-app contract, where
+ * every context field is a string. task-context.ts adapts these into
+ * TaskContext; nothing else should read them.
+ */
+export interface OrionTaskAppProps {
+  project_id: string;
+  project_code: string;
+  workflow_id: string;
+  workflow_code: string;
+  task_id: string;
+  task_uid: string;
+  user_id: string;
+  /** Which screen to render — one of mode-path.ts's path keys, declared on the app's registry row in Orion. */
+  app_screen?: string;
+  file_id?: string;
+  file_task_id?: string;
+  file_url?: string;
+  file_name?: string;
+  file_mime?: string;
+  basePath?: string;
+  apiBaseUrl?: string;
+  onTaskComplete?: () => void;
+  onTaskProgress?: (progress: number) => void;
+  /** Register page only: asks Orion to re-read what this operator registered. Call through host.ts. */
+  onFilesRegistered?: (fileIds: string[]) => void;
+  /**
+   * Resolves to the app token this app's server needs on every call; rejects
+   * when Orion issues none. Call through host.ts, before each request: Orion
+   * keeps one ready and renews it.
+   */
+  getAppToken?: () => Promise<string>;
+}
+
+/** Whatever single-spa passes to mount()/renderReactNode — Orion's contract props plus single-spa's own reserved props. */
+export type CustomProps = Partial<OrionTaskAppProps> & {
   domElement?: HTMLElement;
   name?: string;
   [key: string]: unknown;

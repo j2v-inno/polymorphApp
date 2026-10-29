@@ -1,7 +1,23 @@
-import { Router } from 'express';
-import { flowBackFileTask, getAllTasks, resolveActiveFile, updateFileMetaData, updateFileStatus } from '../uwbe-client/endpoints.js';
+import { Router, type Request, type Response } from 'express';
+import type { OrionContract } from '../middleware/auth.js';
+import {
+  FLOWBACK_REASON_MAX,
+  flowBackFileTask,
+  getAllTasks,
+  getFileTaskStatus,
+  resolveActiveFile,
+  updateFileMetaData,
+  updateFileStatus,
+  type ActiveFileContext,
+  type FlowBackTarget,
+} from '../uwbe-client/endpoints.js';
 
 export const qualificationRouter = Router();
+
+interface QualificationFile {
+  file: ActiveFileContext;
+  taskUid: string;
+}
 
 /**
  * §6.2 step 1 — resolveActiveFile handles both "file already claimed by
@@ -9,8 +25,12 @@ export const qualificationRouter = Router();
  * claimed" (see its own doc comment). Needs task_uid, which TaskContext
  * doesn't carry directly, so it's resolved via get-all-tasks + matching on
  * taskId (same pattern as batch-split.ts/download.ts).
+ *
+ * Shared by /context and /content, so both resolve the file the same way from
+ * the same task-context query — writes the error response itself and returns
+ * null when resolution fails.
  */
-qualificationRouter.get('/context', async (req, res) => {
+async function resolveQualificationFile(req: Request, res: Response): Promise<QualificationFile | null> {
   const projectId = Number(req.query.projectId);
   const projectCode = String(req.query.projectCode ?? '');
   const workflowCode = String(req.query.workflowCode ?? '');
@@ -21,40 +41,68 @@ qualificationRouter.get('/context', async (req, res) => {
 
   if (!projectId || !projectCode || !workflowCode || !taskId || !fileId) {
     res.status(400).json({ ok: false, error: 'projectId, projectCode, workflowCode, taskId, and fileId are required' });
-    return;
+    return null;
   }
 
   const taskGraph = await getAllTasks({ projectCode, workflowCode });
   if (!taskGraph.ok || !taskGraph.data) {
     res.status(502).json({ ok: false, error: taskGraph.error ?? 'get-all-tasks failed' });
-    return;
+    return null;
   }
   const currentTask = taskGraph.data.find((t) => t.id === taskId);
   if (!currentTask) {
     res.status(502).json({ ok: false, error: `no task with id ${taskId} found in the workflow graph` });
-    return;
+    return null;
   }
 
   const result = await resolveActiveFile({ projectId, projectCode, taskId, taskUid: currentTask.task_uid, fileId, jobId, userId });
   if (!result.ok || !result.data) {
     res.status(404).json({ ok: false, error: result.error });
-    return;
+    return null;
   }
-  res.json({ ok: true, data: { ...result.data, task_uid: currentTask.task_uid } });
+  return { file: result.data, taskUid: currentTask.task_uid };
+}
+
+/** The parts of Orion's answer a send-back reads, beyond what requireAuth types. */
+type SendBackContract = OrionContract & {
+  subject: { id: number };
+  context: { job: { id: number } | null; batch: { id: number } | null };
+  flow_back_targets?: FlowBackTarget[];
+};
+
+const flowBackTargets = (contract: OrionContract | undefined): FlowBackTarget[] =>
+  (contract as SendBackContract | undefined)?.flow_back_targets ?? [];
+
+qualificationRouter.get('/context', async (req, res) => {
+  const resolved = await resolveQualificationFile(req, res);
+  if (!resolved) return;
+  res.json({
+    ok: true,
+    data: { ...resolved.file, task_uid: resolved.taskUid, flow_back_targets: flowBackTargets(req.orion) },
+  });
 });
 
 /**
- * Server-side fetch of a file's own (already-authenticated, presigned)
- * input_download_url — avoids the browser hitting CORS on the S3/MinIO
- * signed URL directly, same technique batch-split.ts already uses to fetch a
- * parent file's bytes. Used by the qualification screen's structured-content
- * viewer (content_format: 'xml'|'json' in meta_data) to display transformed
- * output as text instead of a PDF iframe.
+ * The raw text of the file's own input_download_url, fetched server-side —
+ * avoids the browser hitting CORS on the S3/MinIO presigned URL directly, same
+ * technique batch-split.ts already uses to fetch a parent file's bytes. Used by
+ * the qualification screen's structured-content viewer (content_format:
+ * 'xml'|'json' in meta_data) to display transformed output as text instead of
+ * a PDF iframe.
+ *
+ * Takes the same task-context query as /context and resolves the URL itself,
+ * rather than accepting one from the caller: this used to be
+ * /content-proxy?url=, which fetched any URL it was given and returned the
+ * body — a server-side request forgery hole reaching anything this backend can
+ * reach, including the box's own services when EXTRA_HOST_ENTRY is set.
  */
-qualificationRouter.get('/content-proxy', async (req, res) => {
-  const url = String(req.query.url ?? '');
-  if (!/^https?:\/\//i.test(url)) {
-    res.status(400).json({ ok: false, error: 'url must be an http(s) URL' });
+qualificationRouter.get('/content', async (req, res) => {
+  const resolved = await resolveQualificationFile(req, res);
+  if (!resolved) return;
+
+  const url = resolved.file.input_download_url;
+  if (!url) {
+    res.status(404).json({ ok: false, error: 'this file has no input_download_url to fetch content from' });
     return;
   }
 
@@ -133,16 +181,148 @@ qualificationRouter.post('/metadata', async (req, res) => {
 });
 
 interface CompleteBody {
+  /** Only needed if the task requires the reviewed file as its output. */
+  projectId?: number;
   projectCode: string;
   /** Plumbing only — kept so payloads mirror the launch URL. */
   workflowId?: number;
+  /** Only needed if the task requires the reviewed file as its output. */
+  taskId?: number;
   taskUid: string;
   fileId: number;
+  jobId?: number;
   pagesWithErrors: number[];
   outcome: 'clean' | 'rework' | 'archive';
   flowbackReason?: string;
+  /** Rework only: `file_task_id` of the chosen entry in `flow_back_targets`. Not needed when there is one. */
+  flowBackToFileTaskId?: number;
   nextTask?: string;
   userId?: number;
+}
+
+/** uw-be's refusal when a task with user_should_upload_output = 1 is completed without file_data. */
+const FILE_DATA_REQUIRED = 'File data is required';
+
+type ReviewedFile =
+  | { ok: true; fileData: { bytes: Buffer; fileName: string; contentType?: string } }
+  | { ok: false; error: string };
+
+/**
+ * The bytes of the file under review, fetched server-side from its own
+ * download URL. Needs projectId and taskId to resolve the file — callers from
+ * before this fallback existed don't send them, and only reach here on a task
+ * that never completed for them anyway.
+ */
+async function fetchReviewedFile(body: CompleteBody): Promise<ReviewedFile> {
+  if (!body.projectId || !body.taskId) {
+    return { ok: false, error: 'Sending the reviewed file needs projectId and taskId.' };
+  }
+  const active = await resolveActiveFile({
+    projectId: body.projectId,
+    projectCode: body.projectCode,
+    taskId: body.taskId,
+    taskUid: body.taskUid,
+    fileId: body.fileId,
+    jobId: body.jobId,
+  });
+  const downloadUrl = active.data?.input_download_url;
+  if (!active.ok || !downloadUrl) {
+    return { ok: false, error: active.error ?? 'uw-be returned no download URL for this file.' };
+  }
+  try {
+    const download = await fetch(downloadUrl);
+    if (!download.ok) {
+      return { ok: false, error: `Fetching the reviewed file failed: HTTP ${download.status}.` };
+    }
+    return {
+      ok: true,
+      fileData: {
+        bytes: Buffer.from(await download.arrayBuffer()),
+        fileName: String(active.data?.file_name ?? `file-${body.fileId}`),
+        contentType: download.headers.get('content-type') ?? undefined,
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: `Fetching the reviewed file failed: ${err instanceof Error ? err.message : String(err)}.` };
+  }
+}
+
+const NO_FLOW_BACK_TARGETS = 'This task has no earlier task to send files back to. Ask an admin to set Flow Back.';
+
+type SentBack = { ok: true } | { ok: false; status: number; error: string };
+
+/**
+ * Sends the file back to an earlier task, the way Orion's contract says
+ * (`docs/api/webapp-contract.md`, "Sending a file back"): resume it if it is
+ * Pending, put it on hold with the reason, then call flow-back-file-task.
+ * Every id comes from Orion's answer for this app token, and nothing is held
+ * when there is nowhere to send the file.
+ */
+async function sendBack(contract: SendBackContract, body: CompleteBody): Promise<SentBack> {
+  const { project, task, file, job, batch } = contract.context;
+  const reason = body.flowbackReason?.trim();
+  if (!file || !job) return { ok: false, status: 400, error: 'There is no file to send back.' };
+  if (!reason) return { ok: false, status: 400, error: 'flowbackReason is required for rework' };
+  if (reason.length > FLOWBACK_REASON_MAX) {
+    return { ok: false, status: 400, error: `The reason can be at most ${FLOWBACK_REASON_MAX} characters.` };
+  }
+
+  const targets = flowBackTargets(contract);
+  if (!targets.length) return { ok: false, status: 409, error: NO_FLOW_BACK_TARGETS };
+  const target =
+    body.flowBackToFileTaskId !== undefined
+      ? targets.find((t) => t.file_task_id === Number(body.flowBackToFileTaskId))
+      : targets.length === 1
+        ? targets[0]
+        : undefined;
+  if (!target) {
+    return {
+      ok: false,
+      status: 400,
+      error: body.flowBackToFileTaskId !== undefined ? 'This file cannot be sent back to that task.' : 'Choose the task to send the file back to.',
+    };
+  }
+
+  const projectCode = project.code ?? body.projectCode;
+  const taskUid = task.uid ?? body.taskUid;
+  const userId = contract.actor.user_id;
+
+  // A hold needs the file In Progress, so a paused one is resumed first.
+  const standing = await getFileTaskStatus({ projectId: project.id, taskId: task.id, fileId: file.id });
+  if (standing.ok && standing.data?.file_task_status === 'P') {
+    const resumed = await updateFileStatus({ projectCode, taskUid, fileId: file.id, previousFileStatus: 'P', fileStatus: 'I', userId });
+    if (!resumed.ok) return { ok: false, status: 502, error: `Orion did not resume the file: ${resumed.error}` };
+  }
+
+  const held = await updateFileStatus({
+    projectCode,
+    taskUid,
+    fileId: file.id,
+    previousFileStatus: 'I',
+    fileStatus: 'O',
+    onholdReason: reason,
+    userId,
+  });
+  if (!held.ok) return { ok: false, status: 502, error: `Orion did not put the file on hold: ${held.error}` };
+
+  const sent = await flowBackFileTask({
+    projectCode,
+    jobId: job.id,
+    batchId: batch?.id,
+    fileId: file.id,
+    flowBackFromFileTaskId: contract.subject.id,
+    flowBackToFileTaskId: target.file_task_id,
+    flowbackReason: reason,
+    userId,
+  });
+  if (!sent.ok) {
+    return {
+      ok: false,
+      status: 502,
+      error: `The file is on hold, but Orion did not send it back: ${sent.error} Ask a supervisor to send it back from Orion.`,
+    };
+  }
+  return { ok: true };
 }
 
 /** §6.2 step 3 — 3-way routing outcome, chosen by the operator on the qualification screen. */
@@ -161,19 +341,9 @@ qualificationRouter.post('/complete', async (req, res) => {
   }
 
   if (body.outcome === 'rework') {
-    if (!body.flowbackReason) {
-      res.status(400).json({ ok: false, error: 'flowbackReason is required for rework' });
-      return;
-    }
-    const result = await flowBackFileTask({
-      projectCode: body.projectCode,
-      taskUid: body.taskUid,
-      fileId: body.fileId,
-      flowbackReason: body.flowbackReason,
-      userId: body.userId,
-    });
+    const result = await sendBack(req.orion as SendBackContract, body);
     if (!result.ok) {
-      res.status(502).json({ ok: false, error: result.error });
+      res.status(result.status).json({ ok: false, error: result.error });
       return;
     }
     res.json({ ok: true, data: { outcome: 'rework' } });
@@ -183,7 +353,7 @@ qualificationRouter.post('/complete', async (req, res) => {
   // Clean. pages_with_errors travels through meta_data, merged *with* the audit
   // trail only if projects.track_metadata_change=true on this project — unconfirmed
   // (§13 #3). If it's false, this write still succeeds but silently isn't audited.
-  const result = await updateFileStatus({
+  const completion = {
     projectCode: body.projectCode,
     taskUid: body.taskUid,
     fileId: body.fileId,
@@ -192,7 +362,23 @@ qualificationRouter.post('/complete', async (req, res) => {
     metaData: body.pagesWithErrors.length ? { pages_with_errors: body.pagesWithErrors } : undefined,
     nextTask: body.nextTask,
     userId: body.userId,
-  });
+  };
+  let result = await updateFileStatus(completion);
+
+  // Tried without a file first, exactly as before, so every task that completed
+  // that way still does. Only a task with user_should_upload_output = 1 refuses
+  // — uw-be checks that before changing anything — and for those the reviewed
+  // file goes back as the task's output: a review doesn't change the file, and
+  // the next task only looks for its input in THIS task's output.
+  if (!result.ok && result.error?.includes(FILE_DATA_REQUIRED)) {
+    const reviewed = await fetchReviewedFile(body);
+    if (!reviewed.ok) {
+      res.status(502).json({ ok: false, error: `${result.error} ${reviewed.error}` });
+      return;
+    }
+    result = await updateFileStatus({ ...completion, fileData: reviewed.fileData });
+  }
+
   if (!result.ok) {
     res.status(502).json({ ok: false, error: result.error });
     return;

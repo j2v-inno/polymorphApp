@@ -8,6 +8,7 @@ import {
   type ParsedSheet,
   type BulkRegistrationResult,
 } from '../../api-client';
+import { notifyFilesRegistered } from '../../host';
 
 interface Props {
   taskContext: TaskContext;
@@ -106,11 +107,19 @@ export function BulkRegistrationScreen({ taskContext }: Props) {
     setProgressPhase('starting…');
 
     stopPolling();
+    // A resumed run starts with its earlier rows already counted; undefined
+    // makes the first poll a baseline rather than a change.
+    let rowsHandled: number | undefined;
     pollIntervalRef.current = setInterval(async () => {
       const statusResult = await getBulkRegistrationStatus(sheet.sheetId);
       if (statusResult.ok && statusResult.data) {
         const { phase, total, completed, failed } = statusResult.data;
         setProgressPhase(total > 0 ? `${phase} (${completed} done, ${failed} failed, of ${total})` : phase);
+        // Rows land in Orion one at a time, so its panel should fill while a
+        // long run is going, not all at once at the end. The status carries
+        // no file ids; the final call below does.
+        if (rowsHandled !== undefined && completed + failed > rowsHandled) notifyFilesRegistered([]);
+        rowsHandled = completed + failed;
       }
     }, 1500);
 
@@ -130,6 +139,7 @@ export function BulkRegistrationScreen({ taskContext }: Props) {
       setStatus({ kind: 'error', message: result.error ?? 'bulk registration failed' });
       return;
     }
+    notifyFilesRegistered(result.data.rows.flatMap((row) => (row.fileId !== undefined ? [row.fileId] : [])));
     setStatus({ kind: 'done', sheet, result: result.data });
   }
 

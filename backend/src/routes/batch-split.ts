@@ -170,6 +170,15 @@ batchSplitRouter.post('/split', async (req, res) => {
   }
 
   let progress = inFlightSplits.get(body.fileId);
+  // Resuming exists to avoid re-registering children uw-be already has. A
+  // stored attempt that never registered one has nothing to protect, and
+  // replaying it would repeat its failure whatever this request asks for
+  // (its targets were resolved from an older workflow graph, or it was
+  // planned for the other split method) — so drop it and plan afresh.
+  if (progress && !progress.busy && !progress.plan?.some((p) => p.registeredFileId !== undefined)) {
+    inFlightSplits.delete(body.fileId);
+    progress = undefined;
+  }
   if (progress) {
     progress.busy = true;
   }
@@ -254,6 +263,20 @@ batchSplitRouter.post('/split', async (req, res) => {
 
     progress.phase = 'detecting chapters and splitting the PDF';
     const { chunks, usedFallback, detectionMethod } = await splitPdf(parentBytes, splitMethod);
+
+    // A by-chapter split that detects no chapters comes back as equal-pages
+    // chunks, which route like an equal-pages split — so it needs the same
+    // target the check above demands, and that's only knowable after splitting.
+    if (usedFallback && !downloadReadyTaskUid) {
+      inFlightSplits.delete(body.fileId);
+      res.status(409).json({
+        ok: false,
+        error:
+          `no chapters were detected, so this would split by equal pages instead — ` +
+          `and no task with code "${config.batchSplit.downloadReadyTaskCode}" found in the workflow graph`,
+      });
+      return;
+    }
 
     const plan: PlannedChunk[] = chunks.map((chunk) => {
       let targetTaskUid: string;

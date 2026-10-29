@@ -27,6 +27,14 @@ acquisitionRouter.post('/register-and-upload', upload.single('file'), async (req
     return;
   }
   const fileName = withUniqueSuffix(rawFileName);
+  // Without it uw-be registers as user 1 (system), so the file_task_users row
+  // Orion's register page reads is never the operator's. Completion below must
+  // send the same user, or its session guard misses and uw-be answers
+  // "File is already updated." (see registerJobBatchFile's userId comment).
+  // The operator is the one Orion confirmed for this call's app token, not the
+  // form's own userId field: this body is multipart, so requireAuth could not
+  // compare the two before multer parsed it.
+  const userId = req.orion?.actor.user_id;
 
   // 1. Register
   const registerResult = await registerJobBatchFile({
@@ -36,6 +44,7 @@ acquisitionRouter.post('/register-and-upload', upload.single('file'), async (req
     fileName,
     filePath: fileName,
     fileUniqueIdentifier,
+    userId,
   });
   if (!registerResult.ok || !registerResult.data) {
     res.status(502).json({ ok: false, error: registerResult.error ?? 'register-job-batch-file failed' });
@@ -70,7 +79,7 @@ acquisitionRouter.post('/register-and-upload', upload.single('file'), async (req
   // reject vs. flag-and-continue). Config-driven so switching is one env var, not a
   // code change, once that's decided.
   const statusResult = gate.isTextExtractable
-    ? await updateFileStatus({ projectCode, taskUid, fileId, previousFileStatus: 'I', fileStatus: 'C' })
+    ? await updateFileStatus({ projectCode, taskUid, fileId, previousFileStatus: 'I', fileStatus: 'C', userId })
     : config.acquisitionGateMode === 'reject'
       ? await updateFileStatus({
           projectCode,
@@ -79,6 +88,7 @@ acquisitionRouter.post('/register-and-upload', upload.single('file'), async (req
           previousFileStatus: 'I',
           fileStatus: 'O',
           onholdReason: 'PDF failed the text-extractability gate (scanned/image-only)',
+          userId,
         })
       : await updateFileStatus({
           projectCode,
@@ -87,6 +97,7 @@ acquisitionRouter.post('/register-and-upload', upload.single('file'), async (req
           previousFileStatus: 'I',
           fileStatus: 'C',
           metaData: { acquisition_check: 'fail' },
+          userId,
         });
 
   if (!statusResult.ok) {

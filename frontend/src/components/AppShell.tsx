@@ -12,16 +12,38 @@ const STEPS: { key: string; label: string }[] = [
   { key: 'DOWNLOAD', label: 'Download' },
 ];
 
+const SCREEN_LABELS: Record<string, string> = {
+  ...Object.fromEntries(STEPS.map((step) => [step.key, step.label])),
+  BULK_REGISTRATION: 'Bulk registration',
+};
+
 interface Props {
   children: ReactNode;
   /** taskCode of the active screen, if resolved yet — undefined while loading/erroring. */
   activeMode?: string;
   taskContext?: TaskContext;
+  /** Mounted or framed by Orion: Orion's own header is above, so one thin line replaces the brand bar and stepper. */
+  insideOrion?: boolean;
 }
 
 /** Persistent chrome (brand bar + pipeline stepper) around every mode screen and app-level state. */
-export function AppShell({ children, activeMode, taskContext }: Props) {
+export function AppShell({ children, activeMode, taskContext, insideOrion }: Props) {
   const activeIndex = STEPS.findIndex((step) => step.key === activeMode);
+
+  if (insideOrion) {
+    const screenLabel = activeMode ? SCREEN_LABELS[activeMode] : undefined;
+    const fileLabel = taskContext?.fileId !== undefined ? `File ${taskContext.fileId}` : undefined;
+    const line = [fileLabel, screenLabel].filter(Boolean).join(' · ');
+
+    return (
+      <div className="fluid-app fluid-app--in-orion">
+        {line && <div className="fluid-context-line">{line}</div>}
+        <main className="fluid-main">
+          <div className="fluid-card">{children}</div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="fluid-app">

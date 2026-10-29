@@ -15,6 +15,26 @@ export const config = {
     apiToken: required('UWBE_API_TOKEN'), // "id|plaintext-token" — sent verbatim as `api-token` header
   },
 
+  // Checking who is calling (middleware/auth.ts). The app token Orion's page
+  // hands the screen is exchanged with Orion, using the API token above.
+  orion: {
+    // This app's code on Orion's Web Apps page. A token issued for any other
+    // Web App is refused.
+    webAppCode: process.env.ORION_WEB_APP_CODE ?? 'transapp',
+    // The Orion this server trusts, as Orion names itself (its APP_URL). Set
+    // it in every real deployment: production must accept only production's.
+    // Unset, any Orion that UWBE_BASE_URL points at is accepted.
+    issuer: process.env.ORION_ISSUER?.replace(/\/+$/, '') || undefined,
+    // Opened in its own tab, the app gets a launch code on its link, which
+    // Orion answers for an hour and never renews. This server exchanges it
+    // and keeps its own session with that tab for this long instead.
+    tabSessionMinutes: Number(process.env.TAB_SESSION_MINUTES ?? 480),
+    // How long a tab's session goes on Orion's last answer before Orion is
+    // asked again whether the operator still has the work. A file put on
+    // hold, completed or sent back closes the tab within this time.
+    tabRecheckMinutes: Number(process.env.TAB_RECHECK_MINUTES ?? 10),
+  },
+
   // Browser -> Fluid App Backend CORS allowlist. Needed because in Parcel mode the
   // browser still calls this backend directly (only Orion<->transapp-frontend
   // is same-realm; transapp-frontend<->transapp-backend is a normal fetch).

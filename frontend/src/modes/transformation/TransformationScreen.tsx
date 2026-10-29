@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { TaskContext } from '../../types';
 import { transformFile, type TransformFormat, type TransformResult } from '../../api-client';
+import { notifyTaskComplete } from '../../host';
 
 interface Props {
   taskContext: TaskContext;
@@ -33,6 +34,7 @@ export function TransformationScreen({ taskContext }: Props) {
       setError(response.error ?? 'transformation failed');
       return;
     }
+    notifyTaskComplete();
     setResult(response.data);
     setStatus('done');
   }
