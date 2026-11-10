@@ -24,10 +24,14 @@ interface Props {
   taskContext?: TaskContext;
   /** Mounted or framed by Orion: Orion's own header is above, so one thin line replaces the brand bar and stepper. */
   insideOrion?: boolean;
+  /** Shown on the right of the brand bar, in place of the task's project line. */
+  aside?: ReactNode;
+  /** The screen fills the page below the brand bar, with no card around it (the queue). */
+  fill?: boolean;
 }
 
 /** Persistent chrome (brand bar + pipeline stepper) around every mode screen and app-level state. */
-export function AppShell({ children, activeMode, taskContext, insideOrion }: Props) {
+export function AppShell({ children, activeMode, taskContext, insideOrion, aside, fill }: Props) {
   const activeIndex = STEPS.findIndex((step) => step.key === activeMode);
 
   if (insideOrion) {
@@ -46,7 +50,7 @@ export function AppShell({ children, activeMode, taskContext, insideOrion }: Pro
   }
 
   return (
-    <div className="fluid-app">
+    <div className={`fluid-app${fill ? ' fluid-app--fill' : ''}`}>
       <header className="fluid-topbar">
         <div className="fluid-brand">
           <span className="fluid-brand__mark">T</span>
@@ -55,7 +59,8 @@ export function AppShell({ children, activeMode, taskContext, insideOrion }: Pro
             <div className="fluid-brand__tag">Fluid document pipeline</div>
           </div>
         </div>
-        {taskContext && (
+        {aside}
+        {!aside && taskContext && (
           <div className="fluid-context">
             <strong>{taskContext.projectCode}</strong>
             {taskContext.workflowCode ? ` · ${taskContext.workflowCode}` : ''}
@@ -86,9 +91,13 @@ export function AppShell({ children, activeMode, taskContext, insideOrion }: Pro
         </nav>
       )}
 
-      <main className="fluid-main">
-        <div className="fluid-card">{children}</div>
-      </main>
+      {fill ? (
+        <main className="fluid-main fluid-main--fill">{children}</main>
+      ) : (
+        <main className="fluid-main">
+          <div className="fluid-card">{children}</div>
+        </main>
+      )}
     </div>
   );
 }

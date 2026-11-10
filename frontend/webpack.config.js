@@ -32,6 +32,9 @@ module.exports = (webpackConfigEnv, argv) => {
     plugins: [
       new webpack.DefinePlugin({
         'process.env.BACKEND_URL': JSON.stringify(process.env.BACKEND_URL || 'http://localhost:4100'),
+        'process.env.ORION_ENTRY_URL': JSON.stringify(
+          process.env.ORION_ENTRY_URL || 'http://localhost:3000/external-page/entry.js',
+        ),
       }),
     ],
   });

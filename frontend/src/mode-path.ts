@@ -43,6 +43,17 @@ export function resolveModeFromPath(pathname: string = window.location.pathname)
 }
 
 /**
+ * The queue (`/queue`, on rnd `/ext/app/wa/queue`) is not a task's screen: it
+ * shows Orion's External page, the operator's files across all her tasks, in
+ * this app's own tab. No task launches it and Orion never names it as an
+ * app_screen, so it is kept out of PATH_TO_TASK_CODE and needs no task context.
+ */
+export function isQueuePath(pathname: string = window.location.pathname): boolean {
+  const segments = pathname.split('/').filter((s) => s.length > 0);
+  return segments[segments.length - 1]?.toLowerCase() === 'queue';
+}
+
+/**
  * Mounted under a host, the screen arrives as Orion's `app_screen` prop instead
  * of a URL path — and its values are these same path keys, declared on the
  * app's registry row in Orion. An undeclared key comes back unchanged, so

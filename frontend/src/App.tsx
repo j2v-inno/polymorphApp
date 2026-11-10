@@ -4,6 +4,8 @@ import { connectHost, disconnectHost, inOwnTab } from './host';
 import { modeRegistry } from './mode-registry';
 import { fromLaunch, launchCodeFromUrl, resolveTaskContextPointer } from './task-context';
 import { AppShell } from './components/AppShell';
+import { isQueuePath } from './mode-path';
+import { QueueScreen } from './queue/QueueScreen';
 import type { CustomProps, TaskContext } from './types';
 import './styles.css';
 
@@ -15,6 +17,14 @@ type LoadState =
   | { status: 'ready'; taskContext: TaskContext };
 
 export default function App(props: CustomProps) {
+  // The queue is opened by its own address, in this app's own tab, and needs
+  // no task. Mounted or framed by Orion, the address is Orion's or a task's, so
+  // it is never read for this.
+  if (inOwnTab(props) && isQueuePath()) return <QueueScreen />;
+  return <TaskApp {...props} />;
+}
+
+function TaskApp(props: CustomProps) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const insideOrion = !inOwnTab(props);
 
