@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppShell } from '../components/AppShell';
 import { ORION_ENTRY_URL } from '../config';
-import type { OrionEntry, OrionExternalPage, OrionOperator, OrionTheme } from './orion-external-page';
+import type { OrionEntry, OrionExternalPage, OrionOperatorChanged, OrionTheme } from './orion-external-page';
 
 // This app's code on Orion's Web Apps screen. Process is live only on tasks
 // whose Web App has it.
 const WEB_APP_CODE = 'transapp';
 
-type Operator = { status: 'checking' } | { status: 'signed-in'; operator: OrionOperator } | { status: 'signed-out' };
+// Until Orion's first `operator-changed`, transapp is still asking.
+type Operator = { status: 'checking' } | OrionOperatorChanged;
 
 function initialTheme(): OrionTheme {
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -18,8 +19,8 @@ function initialTheme(): OrionTheme {
  * this app's own tab. Orion recognises her by her own Orion sign-in in this
  * browser; nothing about her is passed in.
  *
- * Pressing Process does nothing here yet: Orion has not built Process or the
- * event bus that would say which file she started.
+ * Pressing Process does nothing here yet: Orion has not built it, and this
+ * screen listens only for who is signed in.
  */
 export function QueueScreen() {
   const box = useRef<HTMLDivElement>(null);
@@ -41,29 +42,28 @@ export function QueueScreen() {
 
   useEffect(() => {
     let cancelled = false;
+    let stopListening: (() => void) | undefined;
 
     import(/* webpackIgnore: true */ ORION_ENTRY_URL)
       .then((orion: OrionEntry) => {
         if (cancelled || !box.current) return;
-        page.current = orion.mountOrion(box.current, {
-          theme,
-          webApp: WEB_APP_CODE,
-          // Stand-in: when Orion's event bus is built, this becomes a listener
-          // on `operator-changed`, added before mountOrion is called.
-          onOperatorChange: (signedIn) => {
-            if (cancelled) return;
-            setOperator(signedIn ? { status: 'signed-in', operator: signedIn } : { status: 'signed-out' });
-          },
+        // Listen first: Orion says who is signed in once it has asked, and an
+        // event said before anyone listens is lost.
+        stopListening = orion.bus.on('operator-changed', (said) => {
+          if (!cancelled) setOperator(said);
         });
+        page.current = orion.mountOrion(box.current, { theme, webApp: WEB_APP_CODE });
       })
       .catch((err: unknown) => {
         console.error('[transapp] could not load Orion:', err);
         if (!cancelled) setLoadError(`Orion's queue could not be loaded from ${ORION_ENTRY_URL}.`);
       });
 
-    // Leaving the queue takes Orion's page with it.
+    // Leaving the queue takes Orion's page with it. Orion's unmount removes its
+    // own listeners only, so this one is removed here.
     return () => {
       cancelled = true;
+      stopListening?.();
       page.current?.unmount();
       page.current = null;
     };
@@ -75,13 +75,14 @@ export function QueueScreen() {
     page.current?.update({ theme });
   }, [theme]);
 
-  const signedInLine =
-    operator.status === 'signed-in'
-      ? `Signed in to Orion as ${operator.operator.name}`
+  const signedInLine = loadError
+    ? undefined
+    : operator.status === 'signed-in'
+      ? `Signed in to Orion as ${operator.name}`
       : operator.status === 'signed-out'
         ? 'Not signed in to Orion'
-        : loadError
-          ? undefined
+        : operator.status === 'unreachable'
+          ? 'Orion could not be reached'
           : 'Checking your Orion sign-in…';
 
   return (
@@ -90,7 +91,7 @@ export function QueueScreen() {
       aside={
         <div className="fluid-queue__aside">
           {signedInLine && (
-            <span className="fluid-queue__operator" title={operator.status === 'signed-in' ? operator.operator.email : undefined}>
+            <span className="fluid-queue__operator" title={operator.status === 'signed-in' ? operator.email : undefined}>
               {signedInLine}
             </span>
           )}
