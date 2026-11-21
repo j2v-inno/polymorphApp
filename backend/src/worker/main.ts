@@ -9,7 +9,12 @@ import {
 import { config } from '../config.js';
 import { workerConfig } from './config.js';
 import { parseMessage } from './payload.js';
+import { handlers } from './handlers/index.js';
+import { fileStep, heartbeat, startWorkerMonitor } from './monitor.js';
 import { giveUp, processMessage } from './pipeline.js';
+import { taskCodeFor } from './uwbe.js';
+
+startWorkerMonitor();
 
 const sqs = new SQSClient({
   region: workerConfig.region,
@@ -21,6 +26,28 @@ const sqs = new SQSClient({
 });
 
 let stopping = false;
+const startedAt = new Date().toISOString();
+let busyWith: { task: string; fileId: number } | null = null;
+
+/** Tells the monitor page the worker is alive, what it reads and how it is set up. */
+function beat(): void {
+  heartbeat({
+    pid: process.pid,
+    startedAt,
+    queueUrl: workerConfig.queueUrl,
+    orionUrl: config.uwbe.baseUrl,
+    tasks: Object.keys(handlers),
+    settings: {
+      wait_seconds: workerConfig.waitSeconds,
+      visibility_seconds: workerConfig.visibilitySeconds,
+      max_messages: workerConfig.maxMessages,
+      max_receives: workerConfig.maxReceives,
+      acting_user_id: workerConfig.userId,
+      transmission_source: process.env.TRANSMISSION_SOURCE_TASK ?? 'MARKUP_REVIEW',
+    },
+    busyWith,
+  });
+}
 const log = (line: string) => console.log(`${new Date().toISOString()} [worker] ${line}`);
 
 async function ack(message: Message): Promise<void> {
@@ -41,19 +68,26 @@ async function handle(message: Message): Promise<void> {
     log(`note: message names ${msg.api_base_url}, calling UWBE_BASE_URL ${config.uwbe.baseUrl}`);
   }
 
+  const code = await taskCodeFor(msg.task_uid).catch(() => '?');
+  busyWith = { task: code, fileId: msg.file_id };
+  beat();
   try {
-    const outcome = await processMessage(msg);
+    const outcome = await processMessage(msg, receives);
     log(outcome.note);
     if (outcome.ack) await ack(message);
     else if (receives >= workerConfig.maxReceives) await ack(message);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     log(`file=${msg.file_id} attempt ${receives}/${workerConfig.maxReceives} failed: ${reason}`);
+    fileStep(msg, code, 'failed', { attempt: receives, error: reason, note: receives >= workerConfig.maxReceives ? 'last attempt' : 'the message comes back for another attempt' });
     if (receives >= workerConfig.maxReceives) {
       await giveUp(msg, reason);
       await ack(message);
       log(`file=${msg.file_id} put on hold after ${receives} attempts`);
     }
+  } finally {
+    busyWith = null;
+    beat();
   }
 }
 
@@ -65,6 +99,7 @@ async function main(): Promise<void> {
   log(`polling ${workerConfig.queueUrl}, calling ${config.uwbe.baseUrl}`);
 
   while (!stopping) {
+    beat();
     try {
       const { Messages = [] } = await sqs.send(
         new ReceiveMessageCommand({

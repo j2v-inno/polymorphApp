@@ -813,6 +813,14 @@ picker shows a reviewer only files of batches already assigned to them, which on
 happens here. Orion opens a Web App without a file only from a register task, so the workflow has a
 `SAMPLING_REVIEW` launcher task (screen `sampling-review`, no edges): open it from Orion's Register New File.
 
+**Backend monitor** (`frontend/src/modes/monitor/`, backend `monitor/`): a standalone page at `…/monitor`
+(locally `http://localhost:9100/monitor`, on RND `/ext/app/wa/monitor?key=<MONITOR_KEY>`) showing, live, each
+file the worker takes at each automated task (received → claimed → processing → done or failed, with sizes,
+SHA-256 of input and output, timings and what the handler found), the worker's heartbeat and settings, and the
+log lines of both processes. Nothing is stored: the worker posts each event to the server's `/monitor/ingest`
+(`WORKER_MONITOR_URL`), the server relays it to open pages over Server-Sent Events (`/monitor/stream`), and a
+reloaded page starts empty. Set `MONITOR_KEY` on any server reachable from outside, since the page shows file names.
+
 **Local-disk Orion caveats** (none apply on S3/RND):
 - `download-file-task-input` reads the unscoped disk root while uploads are project-scoped, and redirects
   to `/storage/...`. Locally this needs two junctions: `storage/app/nifi/<PROJECT>` and

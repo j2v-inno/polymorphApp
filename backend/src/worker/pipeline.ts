@@ -3,6 +3,8 @@ import { workerConfig } from './config.js';
 import { handlers } from './handlers/index.js';
 import type { FileTaskMessage } from './payload.js';
 import { downloadFileTaskInput, downloadTaskOutput, taskCodeFor } from './uwbe.js';
+import { fileFacts } from '../monitor/events.js';
+import { fileStep } from './monitor.js';
 
 /** What to do with the SQS message once the attempt is over. */
 export type Outcome = { ack: true; note: string } | { ack: false; note: string };
@@ -21,28 +23,38 @@ async function statusAtTask(msg: FileTaskMessage): Promise<string | null> {
  * One delivery of one message, following the consumer contract: dedupe on where the file stands, claim (Y → I),
  * read the input, run the handler, complete (I → C) with its output. Throws on failure, so the message returns.
  */
-export async function processMessage(msg: FileTaskMessage): Promise<Outcome> {
+export async function processMessage(msg: FileTaskMessage, attempt = 1): Promise<Outcome> {
   const code = await taskCodeFor(msg.task_uid);
+  fileStep(msg, code, 'received', { attempt });
+  const skip = (note: string, ack: boolean): Outcome => {
+    fileStep(msg, code, 'skipped', { note });
+    return { ack, note: `${label(msg, code)} ${note}` } as Outcome;
+  };
   const handler = handlers[code];
-  if (!handler) return { ack: false, note: `no handler for task ${code}` };
+  if (!handler) return skip('has no handler in this worker', false);
 
   const status = await statusAtTask(msg);
-  if (status === null) return { ack: true, note: `${label(msg, code)} is no longer at this task` };
+  if (status === null) return skip('is no longer at this task', true);
 
   if (handler.kind === 'trigger') {
-    await handler.run(msg);
+    const started = Date.now();
+    fileStep(msg, code, 'processing');
+    const details = (await handler.run(msg)) ?? undefined;
+    fileStep(msg, code, 'triggered', { durationMs: Date.now() - started, details });
     return { ack: true, note: `${label(msg, code)} triggered` };
   }
 
-  if (status !== 'Y' && status !== 'I') return { ack: true, note: `${label(msg, code)} already ${status}` };
+  if (status !== 'Y' && status !== 'I') return skip(`is already ${status} there`, true);
   const base = { projectCode: msg.project_code, taskUid: msg.task_uid, fileId: msg.file_id, userId: workerConfig.userId };
   if (status === 'Y') {
     const claimed = await updateFileStatus({ ...base, previousFileStatus: 'Y', fileStatus: 'I' });
     if (!claimed.ok) throw new Error(`claim failed: ${claimed.error}`);
+    fileStep(msg, code, 'claimed');
   }
 
   const started = Date.now();
   const input = handler.inputFrom ? await downloadTaskOutput(msg, handler.inputFrom) : await downloadFileTaskInput(msg);
+  fileStep(msg, code, 'processing', { input: fileFacts(input.bytes, input.fileName), note: handler.inputFrom ? `input from ${handler.inputFrom}` : undefined });
   const result = await handler.run({ msg, taskCode: code, input });
 
   const completed = await updateFileStatus({
@@ -53,6 +65,12 @@ export async function processMessage(msg: FileTaskMessage): Promise<Outcome> {
     fileData: result.output,
   });
   if (!completed.ok) throw new Error(`complete failed: ${completed.error}`);
+  fileStep(msg, code, 'done', {
+    durationMs: Date.now() - started,
+    input: fileFacts(input.bytes, input.fileName),
+    output: fileFacts(result.output.bytes, result.output.fileName),
+    details: result.metaData,
+  });
 
   if (handler.afterComplete) await handler.afterComplete(msg).catch((err) => console.warn(`[worker] after ${code}: ${err}`));
   return { ack: true, note: `${label(msg, code)} done in ${Date.now() - started}ms (${result.output.bytes.length} bytes)` };
@@ -71,4 +89,5 @@ export async function giveUp(msg: FileTaskMessage, reason: string): Promise<void
     onholdReason: `Automated step failed: ${reason}`.slice(0, 250),
   });
   if (!held.ok) console.error(`[worker] could not hold file ${msg.file_id}: ${held.error}`);
+  else fileStep(msg, await taskCodeFor(msg.task_uid).catch(() => '?'), 'held', { error: reason });
 }

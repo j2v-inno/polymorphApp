@@ -88,6 +88,6 @@ export const qaCluster: Handler = {
   async run(msg) {
     const result = await createQaClusterAutomatically(msg);
     if (!result.ok) throw new Error(`create-qa-cluster-automatically failed: ${result.error}`);
-    await packageNewClusters(msg);
+    return { clusters_packaged: await packageNewClusters(msg) };
   },
 };

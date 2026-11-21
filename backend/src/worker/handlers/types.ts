@@ -27,7 +27,11 @@ export type Handler =
       /** Runs after the file is completed, e.g. to cut sampling batches straight away. */
       afterComplete?(msg: FileTaskMessage): Promise<void>;
     }
-  | { kind: 'trigger'; run(msg: FileTaskMessage): Promise<void> };
+  | {
+      kind: 'trigger';
+      /** May return what it did, shown on the monitor page. */
+      run(msg: FileTaskMessage): Promise<Record<string, unknown> | void>;
+    };
 
 /** The file name with a new extension, e.g. ruling.pdf → ruling.json. */
 export function withExtension(fileName: string, ext: string): string {

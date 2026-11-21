@@ -8,6 +8,7 @@ import { batchSplitRouter } from './routes/batch-split.js';
 import { bulkRegistrationRouter } from './routes/bulk-registration.js';
 import { downloadRouter } from './routes/download.js';
 import { launchRouter } from './routes/launch.js';
+import { monitorRouter, requestLog } from './monitor/hub.js';
 import { qualificationRouter } from './routes/qualification.js';
 import { samplingReviewRouter } from './routes/sampling-review.js';
 import { transformationRouter } from './routes/transformation.js';
@@ -24,8 +25,12 @@ export function createApp() {
     }),
   );
   app.use(express.json());
+  app.use(requestLog);
 
   app.get('/health', (_req, res) => res.json({ ok: true }));
+
+  // The live monitor page and the worker's events for it. Guarded by MONITOR_KEY, not by an Orion app token.
+  app.use('/monitor', monitorRouter);
 
   // A tab Orion opened trades the launch code on its link for a session here,
   // before it has any bearer to show.
