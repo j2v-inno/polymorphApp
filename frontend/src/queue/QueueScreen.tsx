@@ -26,6 +26,11 @@ export function QueueScreen() {
   const box = useRef<HTMLDivElement>(null);
   const page = useRef<OrionExternalPage | null>(null);
   const [theme, setTheme] = useState<OrionTheme>(initialTheme);
+  // The theme as of now, for the mount: Orion's script can arrive after the
+  // operator has already pressed Dark or Light, and update() before the mount
+  // reaches no one.
+  const themeNow = useRef(theme);
+  themeNow.current = theme;
   const [operator, setOperator] = useState<Operator>({ status: 'checking' });
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -52,7 +57,7 @@ export function QueueScreen() {
         stopListening = orion.bus.on('operator-changed', (said) => {
           if (!cancelled) setOperator(said);
         });
-        page.current = orion.mountOrion(box.current, { theme, webApp: WEB_APP_CODE });
+        page.current = orion.mountOrion(box.current, { theme: themeNow.current, webApp: WEB_APP_CODE });
       })
       .catch((err: unknown) => {
         console.error('[transapp] could not load Orion:', err);
@@ -67,8 +72,7 @@ export function QueueScreen() {
       page.current?.unmount();
       page.current = null;
     };
-    // Mounted once; a theme change goes through update() below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Mounted once; a theme change after the mount goes through update() below.
   }, []);
 
   useEffect(() => {

@@ -32,6 +32,9 @@ module.exports = (webpackConfigEnv, argv) => {
     plugins: [
       new webpack.DefinePlugin({
         'process.env.BACKEND_URL': JSON.stringify(process.env.BACKEND_URL || 'http://localhost:4100'),
+        // Local dev only: the default is a local Orion frontend. A deployed
+        // build must set ORION_ENTRY_URL (frontend/Dockerfile's build arg),
+        // or the queue tries to load Orion from localhost.
         'process.env.ORION_ENTRY_URL': JSON.stringify(
           process.env.ORION_ENTRY_URL || 'http://localhost:3000/external-page/entry.js',
         ),

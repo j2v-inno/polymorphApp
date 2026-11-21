@@ -4,7 +4,7 @@
 export const BACKEND_URL: string = process.env.BACKEND_URL || 'http://localhost:4100';
 
 // Where Orion publishes its External page (the `queue` screen loads it with
-// import()). Baked in at build time like BACKEND_URL. Defaults to a local Orion
-// frontend; set ORION_ENTRY_URL to the Orion this build should show.
-export const ORION_ENTRY_URL: string =
-  process.env.ORION_ENTRY_URL || 'http://localhost:3000/external-page/entry.js';
+// import()). Baked in at build time like BACKEND_URL; the local-dev default
+// lives in webpack.config.js only, so every deployed build must set
+// ORION_ENTRY_URL to the Orion it shows (frontend/Dockerfile, ci.yml).
+export const ORION_ENTRY_URL: string = process.env.ORION_ENTRY_URL as string;
