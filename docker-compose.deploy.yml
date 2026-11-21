@@ -85,6 +85,9 @@ services:
       WORKER_USER_ID: ${WORKER_USER_ID:-1}
       TRANSMISSION_DIR: /data/transmission-out
       TRANSMISSION_SOURCE_TASK: ${TRANSMISSION_SOURCE_TASK:-MARKUP_REVIEW}
+      # On a queue other apps also read, only these are processed; the rest go back to the queue untouched.
+      WORKER_PROJECT_CODE: ${WORKER_PROJECT_CODE:-}
+      WORKER_WORKFLOW_CODE: ${WORKER_WORKFLOW_CODE:-}
       # Live events for the monitor page, relayed by the backend service and never stored.
       WORKER_MONITOR_URL: http://backend:4100/monitor/ingest
       MONITOR_KEY: ${MONITOR_KEY:-}

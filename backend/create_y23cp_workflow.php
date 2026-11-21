@@ -15,15 +15,16 @@
 // QA_BATCH's own input (the reviewed markup). The worker's TRANSMISSION reads MARKUP_REVIEW's output, since a task
 // after a QA task gets no input file in Orion.
 //
-// Automated tasks turn SQS on without their own queue URL, so they publish to the BE's SQS_QUEUE_URL and publish
-// nothing while it is empty. Re-running rebuilds this workflow only; it refuses to drop files unless Y23CP_PURGE=1.
+// Automated tasks publish to Y23CP_SQS_QUEUE_URL when given, otherwise to the BE's SQS_QUEUE_URL (nothing while it is
+// empty). Give one when the BE's queue is shared with other apps, and point the transapp worker at the same queue.
+// Re-running rebuilds this workflow only; it refuses to drop files unless Y23CP_PURGE=1.
 // When the organization has its own database (a tenants row), everything is built inside that database.
 //
 // Run from be/ (all settings optional except the operators):
 //   Y23CP_OPERATOR_IDS=1,7 php artisan tinker --execute="require '../transapp/backend/create_y23cp_workflow.php';"
 //
 //   Y23CP_ORG_CODE (DEFAULT) · Y23CP_PROJECT_CODE (DEMO) · Y23CP_WORKFLOW_CODE (Y23CP) · Y23CP_WEB_APP (transapp)
-//   Y23CP_BATCH_SIZE (10) · Y23CP_SAMPLING_PCT (20) · Y23CP_CLUSTER_SIZE (5) · Y23CP_PURGE (0)
+//   Y23CP_BATCH_SIZE (10) · Y23CP_SAMPLING_PCT (20) · Y23CP_CLUSTER_SIZE (5) · Y23CP_PURGE (0) · Y23CP_SQS_QUEUE_URL
 
 use App\Model\SamplingBatchConfig;
 use App\Model\Task;
@@ -46,6 +47,8 @@ $opts = [
     'sampling_percentage' => (float) $env('Y23CP_SAMPLING_PCT', '20'),
     'cluster_size' => (int) $env('Y23CP_CLUSTER_SIZE', '5'),
     'purge' => $env('Y23CP_PURGE') === '1',
+    // The automated tasks' own queue. Unset, they publish to the BE's default SQS_QUEUE_URL, which other apps may share.
+    'sqs_queue_url' => $env('Y23CP_SQS_QUEUE_URL') ?: null,
 ];
 if ($opts['operators'] === []) {
     throw new RuntimeException('Set Y23CP_OPERATOR_IDS to the Orion user ids who work the manual and QA tasks, e.g. 1,7.');
@@ -122,7 +125,7 @@ try {
 
             return $task;
         };
-        $sqs = ['use_aws_sqs_as_task_queue' => 1, 'aws_sqs_queue_url' => null];
+        $sqs = ['use_aws_sqs_as_task_queue' => 1, 'aws_sqs_queue_url' => $opts['sqs_queue_url']];
 
         $t = [];
         $t['ACQUISITION'] = $make('ACQUISITION', 'Acquisition', 'M', ['pdf', 'pdf'], [
@@ -204,7 +207,8 @@ try {
         Cache::forget('proj_w_wf_'.$project->code);
 
         echo "{$workflow->code} workflow_id={$workflow->id} in project {$project->code} ({$project->id})"
-            ." · batch {$opts['batch_size']} @ {$opts['sampling_percentage']}% · cluster {$opts['cluster_size']}\n";
+            ." · batch {$opts['batch_size']} @ {$opts['sampling_percentage']}% · cluster {$opts['cluster_size']}"
+            .' · queue '.($opts['sqs_queue_url'] ?? "the BE's default")."\n";
         foreach ($t + ['SAMPLING_REVIEW' => $launcher] as $code => $task) {
             printf("  %-16s %s  id=%-4d uid=%s\n", $code, $task->task_type, $task->id, $task->task_uid);
         }

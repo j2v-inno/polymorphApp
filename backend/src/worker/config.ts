@@ -23,4 +23,12 @@ export const workerConfig = {
   transmissionDir: process.env.TRANSMISSION_DIR ?? './transmission-out',
   // Local-disk Orion only: its storage/app folder, where QA cluster zips are written since it gives no upload URL.
   localStorageRoot: process.env.LOCAL_STORAGE_ROOT || undefined,
+  // On a queue other apps also read: only these projects and workflows are processed (comma lists, unset = any).
+  // Every other message is handed back to the queue at once, never deleted or acted on.
+  onlyProjects: codes(process.env.WORKER_PROJECT_CODE),
+  onlyWorkflows: codes(process.env.WORKER_WORKFLOW_CODE),
 };
+
+function codes(value: string | undefined): string[] {
+  return (value ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+}

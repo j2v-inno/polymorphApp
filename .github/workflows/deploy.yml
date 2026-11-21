@@ -63,6 +63,19 @@ jobs:
       UWBE_BASE_URL: ${{ vars.UWBE_BASE_URL }}
       UWBE_API_TOKEN: ${{ secrets.UWBE_API_TOKEN }}
       EXTRA_HOST_ENTRY: ${{ vars.EXTRA_HOST_ENTRY }}
+      # The backend's Orion identity, and the worker's queue and output folder.
+      ORION_ISSUER: ${{ vars.ORION_ISSUER }}
+      SQS_QUEUE_URL: ${{ vars.SQS_QUEUE_URL }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TRANSMISSION_HOST_DIR: ${{ vars.TRANSMISSION_HOST_DIR }}
+      # Set when SQS_QUEUE_URL is shared with other apps: the worker leaves everything else on the queue.
+      WORKER_PROJECT_CODE: ${{ vars.WORKER_PROJECT_CODE }}
+      WORKER_WORKFLOW_CODE: ${{ vars.WORKER_WORKFLOW_CODE }}
+      # Leave both AWS keys unset when the VM's instance role can use the queue.
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      # Guards the monitor page (…/monitor?key=…), which shows file names.
+      MONITOR_KEY: ${{ secrets.MONITOR_KEY }}
       # GITHUB_TOKEN can pull the package because it was published by this
       # repo's Actions (auto-linked). No service-account PAT required; for
       # manual pulls on the VM outside CI, use a personal PAT (read:packages) —
@@ -98,7 +111,22 @@ jobs:
           UWBE_BASE_URL=${UWBE_BASE_URL}
           UWBE_API_TOKEN=${UWBE_API_TOKEN}
           EXTRA_HOST_ENTRY=${EXTRA_HOST_ENTRY}
+          ORION_ISSUER=${ORION_ISSUER}
+          SQS_QUEUE_URL=${SQS_QUEUE_URL}
+          AWS_REGION=${AWS_REGION:-us-east-1}
+          AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+          AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+          TRANSMISSION_HOST_DIR=${TRANSMISSION_HOST_DIR:-/opt/transapp/${DEPLOY_ENV}/transmission-out}
+          MONITOR_KEY=${MONITOR_KEY}
+          WORKER_PROJECT_CODE=${WORKER_PROJECT_CODE}
+          WORKER_WORKFLOW_CODE=${WORKER_WORKFLOW_CODE}
           EOF
+
+          # The worker exits at startup without its queue; fail here rather than leave it restarting.
+          if [ -z "${SQS_QUEUE_URL}" ]; then
+            echo "SQS_QUEUE_URL is not set in the ${DEPLOY_ENV} environment: the worker cannot start."
+            exit 1
+          fi
 
           $COMPOSE pull
           $COMPOSE up -d --remove-orphans
@@ -130,6 +158,15 @@ jobs:
           if [ "$ok" != "1" ]; then
             echo "Frontend health check FAILED"
             $COMPOSE logs --tail=100 frontend
+            exit 1
+          fi
+
+          # The worker has no port: up for 10 s without a restart counts as healthy (bad settings exit at startup).
+          echo "Checking the worker..."
+          sleep 10
+          if [ "$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "transapp-worker-${DEPLOY_ENV}")" != "true 0" ]; then
+            echo "Worker health check FAILED"
+            $COMPOSE logs --tail=100 worker
             exit 1
           fi
 
