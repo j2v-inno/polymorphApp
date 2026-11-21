@@ -44,6 +44,11 @@ services:
       BATCH_SPLIT_QUALIFICATION_TASK_CODE: ${BATCH_SPLIT_QUALIFICATION_TASK_CODE:-QUALIFICATION}
       BATCH_SPLIT_TRANSFORM_TASK_CODE: ${BATCH_SPLIT_TRANSFORM_TASK_CODE:-TRANSFORMATION}
       BATCH_SPLIT_CHAPTER_HEADING_PATTERN: ${BATCH_SPLIT_CHAPTER_HEADING_PATTERN:-}
+      ORION_WEB_APP_CODE: ${ORION_WEB_APP_CODE:-transapp}
+      ORION_ISSUER: ${ORION_ISSUER:-}
+      TAB_SESSION_MINUTES: ${TAB_SESSION_MINUTES:-480}
+      TAB_RECHECK_MINUTES: ${TAB_RECHECK_MINUTES:-10}
+      SAMPLING_TASK_CODE: ${SAMPLING_TASK_CODE:-QA_BATCH}
     restart: unless-stopped
     healthcheck:
       # busybox wget, not curl — the node:20-alpine runner image doesn't have
@@ -53,6 +58,34 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  # SQS consumer for Orion automated tasks (backend/src/worker). Same image as
+  # backend, different entrypoint; no port, no HTTP health endpoint.
+  # Off the real AWS queue: leave SQS_ENDPOINT empty and SQS_CREATE_QUEUE=false;
+  # credentials come from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY in deploy.env
+  # (or the instance role when those are unset).
+  worker:
+    image: ghcr.io/j2v-inno/transapp-backend:${IMAGE_TAG:?IMAGE_TAG not set}
+    container_name: transapp-worker-${DEPLOY_ENV:-dev}
+    command: ["node", "dist/worker/main.js"]
+    extra_hosts:
+      - ${EXTRA_HOST_ENTRY:-unused.invalid:127.0.0.1}
+    environment:
+      UWBE_BASE_URL: ${UWBE_BASE_URL:?UWBE_BASE_URL not set}
+      UWBE_API_TOKEN: ${UWBE_API_TOKEN:?UWBE_API_TOKEN not set}
+      SQS_QUEUE_URL: ${SQS_QUEUE_URL:-}
+      SQS_ENDPOINT: ${SQS_ENDPOINT:-}
+      SQS_CREATE_QUEUE: ${SQS_CREATE_QUEUE:-false}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      WORKER_MAX_RECEIVES: ${WORKER_MAX_RECEIVES:-5}
+      WORKER_USER_ID: ${WORKER_USER_ID:-1}
+      TRANSMISSION_DIR: /data/transmission-out
+      TRANSMISSION_SOURCE_TASK: ${TRANSMISSION_SOURCE_TASK:-MARKUP_REVIEW}
+    volumes:
+      - ${TRANSMISSION_HOST_DIR:-./transmission-out}:/data/transmission-out
+    restart: unless-stopped
 
   frontend:
     image: ghcr.io/j2v-inno/transapp-frontend:${IMAGE_TAG:?IMAGE_TAG not set}

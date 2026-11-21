@@ -9,6 +9,7 @@ import { bulkRegistrationRouter } from './routes/bulk-registration.js';
 import { downloadRouter } from './routes/download.js';
 import { launchRouter } from './routes/launch.js';
 import { qualificationRouter } from './routes/qualification.js';
+import { samplingReviewRouter } from './routes/sampling-review.js';
 import { transformationRouter } from './routes/transformation.js';
 import { taskContextRouter } from './routes/task-context.js';
 
@@ -38,6 +39,7 @@ export function createApp() {
   app.use('/api/batch', batchSplitRouter);
   app.use('/api/transformation', transformationRouter);
   app.use('/api/download', downloadRouter);
+  app.use('/api/sampling-review', samplingReviewRouter);
 
   app.use(errorHandler);
 

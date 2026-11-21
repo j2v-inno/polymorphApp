@@ -68,7 +68,8 @@ taskContextRouter.post('/resolve', async (req, res) => {
   // file_id — so when it's missing and this isn't the acquisition entry
   // task, ask uw-be "what file does this user currently have active here"
   // instead of treating it the same as the no-file-yet case.
-  if (!pointer.fileId && taskCode === 'ACQUISITION') {
+  // SAMPLING_REVIEW works on sampling batches, never on one file: it opens from a register-type launcher task.
+  if (!pointer.fileId && (taskCode === 'ACQUISITION' || taskCode === 'SAMPLING_REVIEW')) {
     res.json({ ok: true, data: { ...pointer, taskCode, taskUid } });
     return;
   }

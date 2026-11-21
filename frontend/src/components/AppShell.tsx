@@ -15,6 +15,7 @@ const STEPS: { key: string; label: string }[] = [
 const SCREEN_LABELS: Record<string, string> = {
   ...Object.fromEntries(STEPS.map((step) => [step.key, step.label])),
   BULK_REGISTRATION: 'Bulk registration',
+  SAMPLING_REVIEW: 'Sample review',
 };
 
 interface Props {
