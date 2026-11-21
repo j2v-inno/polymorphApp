@@ -1,4 +1,4 @@
-import { callUwbe, assertProjectCode } from './http.js';
+import { absoluteOrionUrl, callUwbe, assertProjectCode } from './http.js';
 import type { UwbeResult } from '../types.js';
 
 /**
@@ -235,7 +235,8 @@ export async function getTaskNextFileWithStart(params: GetTaskNextFileWithStartP
     },
   });
   if (!result.ok || !result.data) return { ...result, data: null };
-  return { ...result, data: result.data.file };
+  const file = result.data.file;
+  return { ...result, data: { ...file, input_download_url: absoluteOrionUrl(file.input_download_url) } };
 }
 
 /** Style A. Real response is `data: { file: {...} }` — unwrapped here so callers get the file row directly. */
@@ -251,7 +252,8 @@ export async function getTaskOngoingFile(params: GetTaskOngoingFileParams): Prom
     },
   });
   if (!result.ok || !result.data) return { ...result, data: null };
-  return { ...result, data: result.data.file };
+  const file = result.data.file;
+  return { ...result, data: { ...file, download_url: absoluteOrionUrl(file.download_url as string | undefined) } };
 }
 
 export interface GetFileTaskStatusParams {
@@ -418,13 +420,18 @@ export interface FlowBackFileTaskParams {
   /** Left out when the file has no batch. */
   batchId?: number;
   fileId: number;
-  /** The file's entry at the current task: the contract's `subject.id`. */
-  flowBackFromFileTaskId: number;
-  /** `file_task_id` of the chosen FlowBackTarget. */
-  flowBackToFileTaskId: number;
+  /** The file's entry at the current task: the contract's `subject.id`. Or give flowBackFromTaskId instead. */
+  flowBackFromFileTaskId?: number;
+  /** `file_task_id` of the chosen FlowBackTarget. Or give flowBackToTaskId instead. */
+  flowBackToFileTaskId?: number;
+  /** The task ids, when the file_task ids are not known; Orion resolves the file's rows at them. */
+  flowBackFromTaskId?: number;
+  flowBackToTaskId?: number;
   flowbackReason: string;
   /** Same user_id-defaults-to-1 gap as updateFileStatus — see its param doc. */
   userId?: number;
+  /** Completes an in-progress source row before flowing back. */
+  complete?: boolean;
 }
 
 /**
@@ -445,8 +452,11 @@ export function flowBackFileTask(params: FlowBackFileTaskParams): Promise<UwbeRe
       file_id: params.fileId,
       flow_back_from_file_task_id: params.flowBackFromFileTaskId,
       flow_back_to_file_task_id: params.flowBackToFileTaskId,
+      flow_back_from_task_id: params.flowBackFromTaskId,
+      flow_back_to_task_id: params.flowBackToTaskId,
       flowback_reason: params.flowbackReason,
       user_id: params.userId,
+      complete: params.complete,
     },
   });
 }
@@ -613,5 +623,6 @@ export async function getFileTaskOutput(params: GetFileTaskOutputParams): Promis
     },
   });
   if (!result.ok || !result.data) return { ...result, data: null };
-  return { ...result, data: result.data.file };
+  const file = result.data.file;
+  return { ...result, data: { ...file, download_url: absoluteOrionUrl(file.download_url) } };
 }

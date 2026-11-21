@@ -7,6 +7,7 @@
     "dev": "pnpm --parallel --filter transapp-backend --filter transapp-frontend dev",
     "dev:mock-uwbe": "pnpm --filter mock-uwbe start",
     "dev:backend": "pnpm --filter transapp-backend dev",
+    "dev:worker": "pnpm --filter transapp-backend dev:worker",
     "dev:frontend": "pnpm --filter transapp-frontend dev",
     "build": "pnpm --filter transapp-backend build && pnpm --filter transapp-frontend build",
     "typecheck": "pnpm --filter transapp-backend typecheck && pnpm --filter transapp-frontend typecheck"

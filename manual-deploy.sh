@@ -48,8 +48,15 @@ case "$APP" in
     PORT="${PORT:-4100}"
     HEALTH_PATH="/health"
     ;;
+  worker)
+    # Same image as be; no port, so the health check below is a running-state check.
+    GHCR_IMAGE="ghcr.io/j2v-inno/transapp-backend"
+    SERVICE="worker"
+    PORT=""
+    HEALTH_PATH=""
+    ;;
   *)
-    echo "Usage: $0 --app <fe|be> [--tag TAG] [--env ENV]" >&2
+    echo "Usage: $0 --app <fe|be|worker> [--tag TAG] [--env ENV]" >&2
     exit 1
     ;;
 esac
@@ -64,7 +71,7 @@ export IMAGE_TAG="$TAG"
 export DEPLOY_ENV="$ENVIRONMENT"
 if [ "$APP" = "fe" ]; then
   export FRONTEND_PORT="$PORT"
-else
+elif [ "$APP" = "be" ]; then
   export BACKEND_PORT="$PORT"
 fi
 
@@ -86,6 +93,14 @@ sudo -E docker compose -f docker-compose.deploy.yml --env-file deploy.env -p "$P
 echo "Waiting for health check..."
 ok=0
 for i in $(seq 1 12); do
+  if [ "$APP" = "worker" ]; then
+    # Up for 10s without a restart loop counts as healthy (bad env exits at startup).
+    sleep 10
+    if [ "$(sudo docker inspect -f '{{.State.Running}} {{.RestartCount}}' "transapp-worker-${ENVIRONMENT}")" = "true 0" ]; then
+      ok=1
+    fi
+    break
+  fi
   if curl -fsS "http://localhost:${PORT}${HEALTH_PATH}" >/dev/null; then
     ok=1
     break

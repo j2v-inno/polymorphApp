@@ -4,6 +4,7 @@ import { connectHost, disconnectHost, inOwnTab } from './host';
 import { modeRegistry } from './mode-registry';
 import { fromLaunch, launchCodeFromUrl, resolveTaskContextPointer } from './task-context';
 import { AppShell } from './components/AppShell';
+import { MonitorScreen } from './modes/monitor/MonitorScreen';
 import type { CustomProps, TaskContext } from './types';
 import './styles.css';
 
@@ -14,7 +15,16 @@ type LoadState =
   | { status: 'error'; message: string }
   | { status: 'ready'; taskContext: TaskContext };
 
+/** The backend monitor is its own page, opened at …/monitor in a browser tab, with no task from Orion. */
+function isMonitorPage(props: CustomProps): boolean {
+  return inOwnTab(props) && /\/monitor\/?$/.test(window.location.pathname);
+}
+
 export default function App(props: CustomProps) {
+  return isMonitorPage(props) ? <MonitorScreen /> : <TaskApp {...props} />;
+}
+
+function TaskApp(props: CustomProps) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const insideOrion = !inOwnTab(props);
 

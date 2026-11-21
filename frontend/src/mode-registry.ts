@@ -6,6 +6,7 @@ import { QualificationScreen } from './modes/qualification/QualificationScreen';
 import { BatchSplitScreen } from './modes/batch-split/BatchSplitScreen';
 import { TransformationScreen } from './modes/transformation/TransformationScreen';
 import { DownloadScreen } from './modes/download/DownloadScreen';
+import { SamplingReviewScreen } from './modes/sampling-review/SamplingReviewScreen';
 
 export interface ModeScreenProps {
   taskContext: TaskContext;
@@ -36,4 +37,5 @@ export const modeRegistry: Record<string, ModeConfig> = {
     endpoints: ['update-file-status', 'register-file', 'get-all-tasks'],
   },
   DOWNLOAD: { component: DownloadScreen, endpoints: ['get-file-task-output'] },
+  SAMPLING_REVIEW: { component: SamplingReviewScreen, endpoints: ['sampling-batches', 'sampling-batches/next-file', 'update-file-status', 'flow-back-file-task', 'sampling-batches/run'] },
 };

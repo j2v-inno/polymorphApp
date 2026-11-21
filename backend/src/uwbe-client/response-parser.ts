@@ -34,6 +34,12 @@ const ENDPOINT_STYLES: Record<string, EnvelopeStyle> = {
   'get-all-tasks': 'A',
   'tasks/{uid}': 'A',
   'flow-back-file-task': 'B',
+  'create-qa-cluster-automatically': 'B',
+  'sampling-batches/run': 'A',
+  'get-task-next-file-with-start': 'A',
+  'get-task-next-qa-cluster-with-start': 'B',
+  'get-qa-cluster-n-prf-upload-url': 'B',
+  'update_cluster_instance': 'B',
 };
 
 interface StyleAEnvelope<T> {

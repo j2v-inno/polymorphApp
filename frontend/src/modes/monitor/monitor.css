@@ -1,0 +1,364 @@
+/* Backend monitor: a standalone page at …/monitor. Colours come from the tokens in styles.css, dark mode included. */
+.fluid-monitor {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 24px;
+  color: var(--fl-text);
+  font-family: var(--fl-font);
+}
+body:has(.fluid-monitor) {
+  margin: 0;
+  background: var(--fl-bg);
+}
+.fluid-monitor__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.fluid-monitor__head h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+.fluid-monitor__sub {
+  margin: 4px 0 0;
+  color: var(--fl-text-muted);
+  font-size: 0.875rem;
+}
+.fluid-monitor__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fluid-monitor__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--fl-border);
+  border-radius: 999px;
+  background: var(--fl-surface);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.fluid-monitor__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.fluid-monitor__badge--ok {
+  color: var(--fl-success);
+  border-color: var(--fl-success-border);
+  background: var(--fl-success-soft);
+}
+.fluid-monitor__badge--ok .fluid-monitor__dot {
+  animation: fluid-monitor-pulse 1.6s ease-in-out infinite;
+}
+.fluid-monitor__badge--bad {
+  color: var(--fl-error);
+  border-color: var(--fl-error-border);
+  background: var(--fl-error-soft);
+}
+@keyframes fluid-monitor-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fluid-monitor__badge--ok .fluid-monitor__dot {
+    animation: none;
+  }
+}
+.fluid-monitor__worker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-surface);
+  box-shadow: var(--fl-shadow-sm);
+  font-size: 0.875rem;
+}
+.fluid-monitor__worker > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.fluid-monitor__worker > div > span:not(.fluid-monitor__label):not(.fluid-monitor__chips) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fluid-monitor__wide {
+  grid-column: span 2;
+}
+.fluid-monitor__label {
+  color: var(--fl-text-faint);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.fluid-monitor__busy {
+  color: var(--fl-primary);
+}
+.fluid-monitor__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.fluid-monitor__chips code,
+.fluid-monitor__task {
+  padding: 1px 6px;
+  border-radius: var(--fl-radius-sm);
+  background: var(--fl-primary-soft);
+  color: var(--fl-primary);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.fluid-monitor__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
+}
+.fluid-monitor__pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-surface);
+  box-shadow: var(--fl-shadow-sm);
+}
+.fluid-monitor__pane-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+.fluid-monitor__pane-head h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+.fluid-monitor__pane-head select {
+  margin-left: auto;
+  padding: 4px 8px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-sm);
+  background: var(--fl-surface);
+  color: var(--fl-text);
+}
+.fluid-monitor__pane-head .fluid-review__toggle {
+  margin-left: auto;
+}
+.fluid-monitor__counts {
+  color: var(--fl-text-muted);
+  font-size: 0.8rem;
+}
+.fluid-monitor__empty {
+  margin: 0;
+  color: var(--fl-text-muted);
+  font-size: 0.875rem;
+}
+.fluid-monitor__runs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 300px;
+  max-height: calc(100vh - 330px);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.fluid-monitor__run {
+  padding: 12px 14px;
+  border: 1px solid var(--fl-border);
+  border-left: 4px solid var(--fl-text-faint);
+  border-radius: var(--fl-radius-md);
+  font-size: 0.85rem;
+}
+.fluid-monitor__run.is-active {
+  border-left-color: var(--fl-primary);
+  background: var(--fl-primary-soft);
+}
+.fluid-monitor__run.is-done {
+  border-left-color: var(--fl-success);
+}
+.fluid-monitor__run.is-bad {
+  border-left-color: var(--fl-error);
+  background: var(--fl-error-soft);
+}
+.fluid-monitor__run-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fluid-monitor__file {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fluid-monitor__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fluid-monitor__state .fluid-spinner {
+  width: 10px;
+  height: 10px;
+}
+.fluid-monitor__state--active {
+  background: var(--fl-surface);
+  color: var(--fl-primary);
+}
+.fluid-monitor__state--done {
+  background: var(--fl-success-soft);
+  color: var(--fl-success);
+}
+.fluid-monitor__state--bad {
+  background: var(--fl-surface);
+  color: var(--fl-error);
+}
+.fluid-monitor__state--skip {
+  background: var(--fl-bg);
+  color: var(--fl-text-muted);
+}
+.fluid-monitor__meta,
+.fluid-monitor__io,
+.fluid-monitor__note {
+  margin-top: 6px;
+  color: var(--fl-text-muted);
+  font-size: 0.78rem;
+}
+.fluid-monitor__io {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.fluid-monitor__error {
+  margin-top: 6px;
+  color: var(--fl-error);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.fluid-monitor__stages {
+  display: flex;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.fluid-monitor__stages li {
+  flex: 1;
+  padding: 3px 0;
+  border-top: 3px solid var(--fl-border);
+  color: var(--fl-text-faint);
+  font-size: 0.7rem;
+  text-align: center;
+}
+.fluid-monitor__stages li.is-reached {
+  border-top-color: var(--fl-success);
+  color: var(--fl-text);
+}
+.fluid-monitor__more {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fl-primary);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.fluid-monitor__details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 16px;
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+}
+.fluid-monitor__details div {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.fluid-monitor__details dt {
+  flex: none;
+  color: var(--fl-text-faint);
+}
+.fluid-monitor__details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.fluid-monitor__log {
+  flex: 1;
+  min-height: 300px;
+  max-height: calc(100vh - 330px);
+  padding: 8px;
+  overflow-y: auto;
+  border-radius: var(--fl-radius-sm);
+  background: var(--fl-bg);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.fluid-monitor__line {
+  display: flex;
+  gap: 8px;
+}
+.fluid-monitor__line--warn .fluid-monitor__text {
+  color: var(--fl-warning);
+}
+.fluid-monitor__line--error .fluid-monitor__text {
+  color: var(--fl-error);
+}
+.fluid-monitor__time {
+  flex: none;
+  color: var(--fl-text-faint);
+}
+.fluid-monitor__source {
+  flex: none;
+  width: 48px;
+  font-weight: 600;
+}
+.fluid-monitor__source--worker {
+  color: var(--fl-primary);
+}
+.fluid-monitor__source--server {
+  color: var(--fl-success);
+}
+.fluid-monitor__text {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 960px) {
+  .fluid-monitor {
+    padding: 16px;
+  }
+  .fluid-monitor__worker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .fluid-monitor__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fluid-monitor__details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
