@@ -68,6 +68,9 @@ jobs:
       SQS_QUEUE_URL: ${{ vars.SQS_QUEUE_URL }}
       AWS_REGION: ${{ vars.AWS_REGION }}
       TRANSMISSION_HOST_DIR: ${{ vars.TRANSMISSION_HOST_DIR }}
+      # Set when SQS_QUEUE_URL is shared with other apps: the worker leaves everything else on the queue.
+      WORKER_PROJECT_CODE: ${{ vars.WORKER_PROJECT_CODE }}
+      WORKER_WORKFLOW_CODE: ${{ vars.WORKER_WORKFLOW_CODE }}
       # Leave both AWS keys unset when the VM's instance role can use the queue.
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -115,6 +118,8 @@ jobs:
           AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
           TRANSMISSION_HOST_DIR=${TRANSMISSION_HOST_DIR:-/opt/transapp/${DEPLOY_ENV}/transmission-out}
           MONITOR_KEY=${MONITOR_KEY}
+          WORKER_PROJECT_CODE=${WORKER_PROJECT_CODE}
+          WORKER_WORKFLOW_CODE=${WORKER_WORKFLOW_CODE}
           EOF
 
           # The worker exits at startup without its queue; fail here rather than leave it restarting.
