@@ -250,6 +250,19 @@ samplingReviewRouter.post('/samples/:fileId/reject', async (req, res) => {
   res.json({ ok: true, data: { batchUid: sample.batch_uid } });
 });
 
+/** Cuts batches from the files waiting now; the screen's Refresh calls it before listing. */
+samplingReviewRouter.post('/create', async (req, res) => {
+  const scope = await scopeFor(req, res);
+  if (!scope) return;
+  const result = await createBatches(scope);
+  if (!result.ok) {
+    res.status(502).json({ ok: false, error: result.error ?? 'Could not cut sampling batches.' });
+    return;
+  }
+  const data = result.data as { created?: unknown[]; waiting_count?: number } | null;
+  res.json({ ok: true, data: { created: data?.created?.length ?? 0, waitingCount: data?.waiting_count ?? 0 } });
+});
+
 /** Releases every batch whose samples are all approved, now rather than at the next scheduler run. */
 samplingReviewRouter.post('/release', async (req, res) => {
   const scope = await scopeFor(req, res);

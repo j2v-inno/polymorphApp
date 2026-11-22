@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TaskContext } from '../../types';
 import {
+  createSamplingBatches,
   getNextSample,
   getSamplingBatch,
   listSamplingBatches,
@@ -99,6 +100,20 @@ export function SamplingReviewScreen({ taskContext }: Props) {
     await loadNext();
   }
 
+  // Refresh also cuts batches from the files waiting now, so a full batch shows up without the scheduler.
+  async function refresh() {
+    setBusy('refresh');
+    setError(null);
+    const result = await createSamplingBatches();
+    if (!result.ok || !result.data) {
+      setError(result.error ?? 'Could not cut new batches.');
+    } else if (result.data.created) {
+      setNotice(`Cut ${result.data.created} new batch(es).`);
+    }
+    await loadBatches();
+    setBusy(null);
+  }
+
   async function release() {
     setBusy('release');
     setError(null);
@@ -136,7 +151,8 @@ export function SamplingReviewScreen({ taskContext }: Props) {
           </p>
         </div>
         <div className="fluid-toolbar">
-          <button className="fluid-btn fluid-btn--secondary" onClick={() => void loadBatches()} disabled={busy !== null}>
+          <button className="fluid-btn fluid-btn--secondary" onClick={() => void refresh()} disabled={busy !== null}>
+            {busy === 'refresh' && <span className="fluid-spinner" />}
             Refresh
           </button>
           <button className="fluid-btn fluid-btn--primary" onClick={() => void release()} disabled={busy !== null || readyCount === 0}>

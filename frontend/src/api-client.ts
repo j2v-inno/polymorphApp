@@ -590,6 +590,11 @@ export function reviewSample(
   });
 }
 
+/** Cuts batches from the files waiting at the sampling task now, instead of waiting for Orion's scheduler. */
+export function createSamplingBatches(): Promise<BackendResult<{ created: number; waitingCount: number }>> {
+  return callBackend('/api/sampling-review/create', { method: 'POST' });
+}
+
 export function releaseSamplingBatches(): Promise<
   BackendResult<{ released: Array<{ uid: string; routed: number }>; failed: Array<{ uid: string; error: string }> }>
 > {
