@@ -104,7 +104,8 @@ services:
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80${BASE_PATH:-/ext/app/wa}/index.html"]
+      # 127.0.0.1, not localhost: in Alpine localhost resolves to ::1 first, and nginx here listens on IPv4 only.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80${BASE_PATH:-/ext/app/wa}/index.html"]
       interval: 30s
       timeout: 5s
       retries: 3
