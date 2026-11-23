@@ -768,3 +768,65 @@ curl -X POST http://localhost:4100/api/transformation/transform -H "Content-Type
   `file_status` enum (`O`/`P`/`C`/`I`/`Y`/`BQ`) used elsewhere in the API. The
   general lesson still applies to any *actual* Style B endpoint's payload
   fields, since `response-parser.ts` does strip a top-level `status` key there.
+
+## SQS worker: automated tasks (Y23CP demo)
+
+`backend/src/worker/` consumes Orion's automated-task messages from SQS (contract: uw-be
+`docs/infra/external-app-sqs-consumer.md`). For each message it checks where the file stands, claims it,
+downloads its input, runs the handler for the task's **code**, and completes the file with the handler's
+output and metadata. The message is acknowledged only after that. After `WORKER_MAX_RECEIVES` failed
+deliveries the file is put on hold in Orion with the reason, since there is no DLQ.
+
+| Task code | Handler | Does |
+|---|---|---|
+| `TEXT_EXTRACT` | `text-extract.ts` | PDF → per-page JSON; page/char counts; keyword-based `suggested_classification` (no AI) |
+| `XML_MARKUP` | `xml-markup.ts` | JSON → Court Rules XML; well-formedness, element count, bytes, LDU word coverage, text lint |
+| `QA_CLUSTER` | `qa.ts` | Triggers Orion's auto QA clustering, zips each new cluster, marks it QA-ready (files move to QA) |
+| `TRANSMISSION` | `transmission.ts` | Zips MARKUP_REVIEW's XML (`TRANSMISSION_SOURCE_TASK`) with a manifest, drops it in `TRANSMISSION_DIR` (stand-in for the client SFTP) |
+
+`QA_BATCH` is a manual task with Orion sampling batches (v2) on it: files wait there yet to start until a batch is
+cut, and the reviewer works the samples in the sample review screen below.
+
+The workflow itself is `backend/create_y23cp_workflow.php`. Create the project in Orion first, then run from uw-be:
+`Y23CP_OPERATOR_IDS=1,7 php artisan tinker --execute="require '../transapp/backend/create_y23cp_workflow.php';"`.
+It finds the organization and project by code (`Y23CP_ORG_CODE`, default `DEFAULT`; `Y23CP_PROJECT_CODE`, default
+`DEMO`), builds inside the organization's own database when it has one, and `Y23CP_PURGE=1` resets its data.
+transapp's API token must reach the project: an org-scoped token of that organization, or a platform-wide one
+with the project ticked. Layout and why: the comment block at the top of that file.
+
+**Run locally:** ElasticMQ (`docker compose -f docker-compose.sqs.yml up -d` in uw-be), uw-be `.env`
+`SQS_ENDPOINT=http://127.0.0.1:9324` and `SQS_QUEUE_URL=<the worker's SQS_QUEUE_URL>`, then `pnpm dev:worker`.
+Worker settings are in `backend/.env.example` (`SQS_QUEUE_URL`, `SQS_ENDPOINT`, `SQS_CREATE_QUEUE`, …).
+
+**Rehearsal scripts** (`backend/scripts/`, run with `npx tsx`):
+- `court-seed.ts [count]` registers generated Court Rules PDFs at ACQUISITION and completes them.
+- `court-operator.ts <TASK_CODE> [count]` stands in for an operator at a manual task.
+  `OPERATOR_FILE_IDS=1,2` finishes files already In progress.
+- `court-sampling.ts list | create | release` shows the batches at QA_BATCH, or runs a scheduler step now.
+
+**Sample review screen** (`frontend/src/modes/sampling-review/`, backend `routes/sampling-review.ts`): "Get my
+next sample" asks Orion (`sampling-batches/next-file`) for the reviewer's current sample; the first call assigns
+them the oldest waiting batch, and with none waiting it cuts batches once first. Approve starts and completes
+the file at QA_BATCH; Reject (a reason is required) starts it and flows it back to MARKUP_REVIEW, and it returns
+to the same reviewer once reworked. "Release ready batches" sends every fully approved batch on. Orion's own file
+picker shows a reviewer only files of batches already assigned to them, which only `next-file` does, so the review
+happens here. Orion opens a Web App without a file only from a register task, so the workflow has a
+`SAMPLING_REVIEW` launcher task (screen `sampling-review`, no edges): open it from Orion's Register New File.
+
+**Backend monitor** (`frontend/src/modes/monitor/`, backend `monitor/`): a standalone page at `…/monitor`
+(locally `http://localhost:9100/monitor`, on RND `/ext/app/wa/monitor?key=<MONITOR_KEY>`) showing, live, each
+file the worker takes at each automated task (received → claimed → processing → done or failed, with sizes,
+SHA-256 of input and output, timings and what the handler found), the worker's heartbeat and settings, and the
+log lines of both processes. Nothing is stored: the worker posts each event to the server's `/monitor/ingest`
+(`WORKER_MONITOR_URL`), the server relays it to open pages over Server-Sent Events (`/monitor/stream`), and a
+reloaded page starts empty. Set `MONITOR_KEY` on any server reachable from outside, since the page shows file names.
+
+**Local-disk Orion caveats** (none apply on S3/RND):
+- `download-file-task-input` reads the unscoped disk root while uploads are project-scoped, and redirects
+  to `/storage/...`. Locally this needs two junctions: `storage/app/nifi/<PROJECT>` and
+  `public/storage/nifi/<PROJECT>` → `storage/app/projects/<PROJECT>/nifi/<PROJECT>`.
+- Orion gives no upload URL for cluster zips, so set `LOCAL_STORAGE_ROOT` to uw-be's `storage/app`.
+- Task outputs go up as `file_data` on `update-file-status`, so PHP's `upload_max_filesize` caps them (2 MB on the local XAMPP; check RND's php.ini).
+
+**Known limits:** Orion caches an empty "next cluster" answer for 5–10 minutes, so release one sampling
+batch at a time during a demo. Rebuilding the workflow changes every task uid.

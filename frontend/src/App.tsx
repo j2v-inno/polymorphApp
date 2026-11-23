@@ -6,6 +6,7 @@ import { fromLaunch, launchCodeFromUrl, resolveTaskContextPointer } from './task
 import { AppShell } from './components/AppShell';
 import { isQueuePath } from './mode-path';
 import { QueueScreen } from './queue/QueueScreen';
+import { MonitorScreen } from './modes/monitor/MonitorScreen';
 import type { CustomProps, TaskContext } from './types';
 import './styles.css';
 
@@ -16,11 +17,17 @@ type LoadState =
   | { status: 'error'; message: string }
   | { status: 'ready'; taskContext: TaskContext };
 
+/** The backend monitor is its own page, opened at …/monitor in a browser tab, with no task from Orion. */
+function isMonitorPage(props: CustomProps): boolean {
+  return inOwnTab(props) && /\/monitor\/?$/.test(window.location.pathname);
+}
+
 export default function App(props: CustomProps) {
   // The queue is opened by its own address, in this app's own tab, and needs
   // no task. Mounted or framed by Orion, the address is Orion's or a task's, so
   // it is never read for this.
   if (inOwnTab(props) && isQueuePath()) return <QueueScreen />;
+  if (isMonitorPage(props)) return <MonitorScreen />;
   return <TaskApp {...props} />;
 }
 

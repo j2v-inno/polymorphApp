@@ -30,6 +30,15 @@ function buildUrl(endpoint: string, query?: CallOptions['query']): string {
   return url.toString();
 }
 
+/**
+ * Orion's file links, made absolute. Local-disk storage hands out host-less paths (`/storage/...`), which
+ * neither Node's fetch nor this app's own page can resolve, so they are taken relative to Orion itself.
+ */
+export function absoluteOrionUrl<T extends string | null | undefined>(url: T): T {
+  if (typeof url !== 'string' || !url.startsWith('/') || url.startsWith('//')) return url;
+  return new URL(url, new URL(config.uwbe.baseUrl).origin).toString() as T;
+}
+
 /** Calls one `uw-be` `routes/api.php` endpoint and normalizes its response via response-parser.ts (§5). */
 export async function callUwbe<T>(endpoint: string, opts: CallOptions = {}): Promise<UwbeResult<T>> {
   const method = opts.method ?? 'POST';

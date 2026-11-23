@@ -23,6 +23,7 @@ const PATH_TO_TASK_CODE: Record<string, string> = {
   qualification: 'QUALIFICATION',
   transformation: 'TRANSFORMATION',
   download: 'DOWNLOAD',
+  'sampling-review': 'SAMPLING_REVIEW',
 };
 
 /**

@@ -519,3 +519,84 @@ export function getDownloadLinks(
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Sample review (Orion sampling batches)
+// ---------------------------------------------------------------------------
+
+export interface SamplingBatchSummary {
+  uid: string;
+  status: 'in_review' | 'released' | string;
+  reviewer: string | null;
+  assigned_at: string | null;
+  file_count: number;
+  sample_count: number;
+  pending_count: number;
+  approved_count: number;
+  rejected_count: number;
+  ready_for_release: boolean;
+  release_error: string | null;
+  created_at: string;
+  released_at: string | null;
+}
+
+export interface SamplingBatchFile {
+  file_id: number;
+  file_name: string;
+  file_status: string | null;
+  is_sampled: boolean;
+  review_status: 'pending' | 'approved' | 'rejected' | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_comment: string | null;
+  reject_count: number;
+  removed: boolean;
+}
+
+export function listSamplingBatches(): Promise<BackendResult<{ batches: SamplingBatchSummary[]; taskCode: string }>> {
+  return callBackend('/api/sampling-review/batches');
+}
+
+export function getSamplingBatch(uid: string): Promise<BackendResult<SamplingBatchSummary & { files: SamplingBatchFile[] }>> {
+  return callBackend(`/api/sampling-review/batches/${encodeURIComponent(uid)}`);
+}
+
+/** The sample Orion has the reviewer on now. */
+export interface NextSample {
+  batch_uid: string;
+  file_id: number;
+  file_name: string;
+  file_status: string;
+  sampled_position: number;
+  sample_count: number;
+  reject_count: number;
+  review_comment: string | null;
+  reviewer: string;
+}
+
+/** The reviewer's current sample and its content; null when no batch is waiting. The first call assigns a batch. */
+export function getNextSample(): Promise<BackendResult<{ sample: NextSample; fileName: string; content: string } | null>> {
+  return callBackend('/api/sampling-review/next', { method: 'POST' });
+}
+
+export function reviewSample(
+  fileId: number,
+  decision: 'approve' | 'reject',
+  comment?: string,
+): Promise<BackendResult<{ batchUid: string }>> {
+  return callBackend(`/api/sampling-review/samples/${fileId}/${decision}`, {
+    method: 'POST',
+    body: decision === 'reject' ? { comment } : {},
+  });
+}
+
+/** Cuts batches from the files waiting at the sampling task now, instead of waiting for Orion's scheduler. */
+export function createSamplingBatches(): Promise<BackendResult<{ created: number; waitingCount: number }>> {
+  return callBackend('/api/sampling-review/create', { method: 'POST' });
+}
+
+export function releaseSamplingBatches(): Promise<
+  BackendResult<{ released: Array<{ uid: string; routed: number }>; failed: Array<{ uid: string; error: string }> }>
+> {
+  return callBackend('/api/sampling-review/release', { method: 'POST' });
+}
