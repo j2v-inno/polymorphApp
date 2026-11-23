@@ -30,8 +30,6 @@ ENV BACKEND_URL=${BACKEND_URL}
 # load.
 ARG ORION_ENTRY_URL
 ENV ORION_ENTRY_URL=${ORION_ENTRY_URL}
-RUN test -n "$ORION_ENTRY_URL" \
-    || { echo "ORION_ENTRY_URL is not set: /queue could not load Orion's External page." >&2; exit 1; }
 
 RUN pnpm --filter transapp-frontend build
 
