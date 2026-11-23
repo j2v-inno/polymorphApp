@@ -4,6 +4,8 @@ import { connectHost, disconnectHost, inOwnTab } from './host';
 import { modeRegistry } from './mode-registry';
 import { fromLaunch, launchCodeFromUrl, resolveTaskContextPointer } from './task-context';
 import { AppShell } from './components/AppShell';
+import { isQueuePath } from './mode-path';
+import { QueueScreen } from './queue/QueueScreen';
 import { MonitorScreen } from './modes/monitor/MonitorScreen';
 import type { CustomProps, TaskContext } from './types';
 import './styles.css';
@@ -21,7 +23,12 @@ function isMonitorPage(props: CustomProps): boolean {
 }
 
 export default function App(props: CustomProps) {
-  return isMonitorPage(props) ? <MonitorScreen /> : <TaskApp {...props} />;
+  // The queue is opened by its own address, in this app's own tab, and needs
+  // no task. Mounted or framed by Orion, the address is Orion's or a task's, so
+  // it is never read for this.
+  if (inOwnTab(props) && isQueuePath()) return <QueueScreen />;
+  if (isMonitorPage(props)) return <MonitorScreen />;
+  return <TaskApp {...props} />;
 }
 
 function TaskApp(props: CustomProps) {

@@ -85,7 +85,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [typecheck, compile, gitleaks]
     runs-on: ubuntu-latest
-    # Bakes this environment's BACKEND_URL/BASE_PATH into the frontend image at
+    # Bakes this environment's BACKEND_URL/ORION_ENTRY_URL/BASE_PATH into the frontend image at
     # build time (webpack.DefinePlugin — frontend.md-equivalent note in
     # frontend/Dockerfile) — same constraint as uw-fe's NEXT_PUBLIC_* values,
     # so this image is only valid for the `dev` environment.
@@ -127,6 +127,7 @@ jobs:
           push: true
           build-args: |
             BACKEND_URL=${{ vars.BACKEND_URL }}
+            ORION_ENTRY_URL=${{ vars.ORION_ENTRY_URL }}
             BASE_PATH=${{ vars.FRONTEND_BASE_PATH }}
             BUNDLE_VERSION=sha-${{ github.sha }}
           tags: |

@@ -170,6 +170,58 @@
   }
 }
 
+/* ---------------------------------------------------------------- queue */
+
+/* The queue fills the window: Orion's page scrolls inside its box, not the tab.
+   Pinned to the window rather than 100vh, so the browser's own margin on
+   <body> neither frames it nor makes the tab scroll; <body> itself is left
+   alone, as it is Orion's when Orion mounts this app. */
+.fluid-app--fill {
+  position: fixed;
+  inset: 0;
+  min-height: 0;
+}
+
+.fluid-main--fill {
+  min-height: 0;
+  flex-direction: column;
+  padding: 20px;
+}
+
+/* Orion needs a box with a height of its own; the flex column gives it one. */
+.fluid-queue__box {
+  flex: 1;
+  min-height: 0;
+  background: var(--fl-surface);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-lg);
+  box-shadow: var(--fl-shadow-md);
+  overflow: hidden;
+}
+
+.fluid-queue__aside {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.fluid-queue__theme {
+  font: inherit;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--fl-radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.fluid-queue__theme:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 /* ---------------------------------------------------------------- stepper */
 
 .fluid-stepper {

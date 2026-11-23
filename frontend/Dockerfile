@@ -24,6 +24,12 @@ COPY frontend frontend
 # NEXT_PUBLIC_BACKEND_API_URL has (see its Dockerfile/ci.yml).
 ARG BACKEND_URL
 ENV BACKEND_URL=${BACKEND_URL}
+# Orion's External page script (the queue screen imports it). Must be the
+# https address of the Orion this environment shows; unset, the bundle falls
+# back to a local Orion (http://localhost:3000), which a deployed page cannot
+# load.
+ARG ORION_ENTRY_URL
+ENV ORION_ENTRY_URL=${ORION_ENTRY_URL}
 
 RUN pnpm --filter transapp-frontend build
 
